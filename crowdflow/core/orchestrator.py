@@ -14,13 +14,13 @@ from typing import Any, Optional
 import cv2
 import numpy as np
 
-from crowdflow.agents.anomaly_agent import AnomalyAgent
-from crowdflow.agents.pattern_agent import PatternAgent
-from crowdflow.agents.reasoning_agent import ReasoningAgent
-from crowdflow.agents.vision_agent import VisionAgent
-from crowdflow.agents.visualization_agent import VisualizationAgent
-from crowdflow.core.config import yapilandirma
-from crowdflow.core.utils import (
+from agents.anomaly_agent import AnomalyAgent
+from agents.pattern_agent import PatternAgent
+from agents.reasoning_agent import ReasoningAgent
+from agents.vision_agent import VisionAgent
+from agents.visualization_agent import VisualizationAgent
+from core.config import yapilandirma
+from core.utils import (
     AkillAnaliz,
     AnomaliSonucu,
     KareSonucu,
@@ -30,7 +30,7 @@ from crowdflow.core.utils import (
     VideoModu,
     logger_olustur,
 )
-from crowdflow.memory.chroma_store import ChromaDepo
+from memory.chroma_store import ChromaDepo
 
 logger = logger_olustur("Orkestrator")
 

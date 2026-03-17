@@ -11,8 +11,8 @@ from typing import Optional
 import cv2
 import numpy as np
 
-from crowdflow.core.config import yapilandirma
-from crowdflow.core.utils import (
+from core.config import yapilandirma
+from core.utils import (
     KareSonucu,
     TespitSonucu,
     bbox_merkez,

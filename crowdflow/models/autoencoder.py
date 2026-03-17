@@ -8,7 +8,7 @@ Yeniden yapılandırma hatası yüksek olan kareler anomali olarak işaretlenir.
 import torch
 import torch.nn as nn
 
-from crowdflow.core.config import yapilandirma
+from core.config import yapilandirma
 
 
 class Enkoder(nn.Module):

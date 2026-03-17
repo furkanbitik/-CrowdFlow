@@ -13,7 +13,7 @@ from typing import Optional
 
 import numpy as np
 
-from crowdflow.core.config import yapilandirma
+from core.config import yapilandirma
 
 
 # ── Enum Tanımları ──────────────────────────────────────────────────────────

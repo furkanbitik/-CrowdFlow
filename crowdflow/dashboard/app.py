@@ -15,9 +15,9 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-from crowdflow.core.config import yapilandirma
-from crowdflow.core.orchestrator import Orkestrator
-from crowdflow.core.utils import (
+from core.config import yapilandirma
+from core.orchestrator import Orkestrator
+from core.utils import (
     ANOMALI_TURKCE,
     RISK_EMOJILERI,
     AkillAnaliz,

@@ -21,8 +21,8 @@ import cv2
 import numpy as np
 import torch
 
-from crowdflow.core.config import yapilandirma
-from crowdflow.core.utils import (
+from core.config import yapilandirma
+from core.utils import (
     AnomaliSonucu,
     AnomaliTipi,
     KareSonucu,
@@ -31,7 +31,7 @@ from crowdflow.core.utils import (
     logger_olustur,
     oklid_mesafesi,
 )
-from crowdflow.models.autoencoder import KonvolusyonelOtoenkodor
+from models.autoencoder import KonvolusyonelOtoenkodor
 
 logger = logger_olustur("AnomalyAgent")
 
