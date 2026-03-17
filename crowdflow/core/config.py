@@ -142,7 +142,7 @@ class VideoAyarlari:
 
     varsayilan_mod: str = "WEBCAM"  # WEBCAM veya DATASET
     webcam_indeksi: int = 0
-    video_dizini: str = str(PROJE_KOK / "data" / "videos")
+    video_dizini: str = str(CROWDFLOW_KOK / "data" / "videos")
     kare_genisligi: int = 640
     kare_yuksekligi: int = 480
     maks_fps: int = 30
