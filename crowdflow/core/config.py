@@ -95,10 +95,16 @@ class AnomaliEsikleri:
 
     yeniden_yapilandirma_esigi: float = 0.02
     panik_hiz_esigi: float = 5.0
+    kavga_mesafe_esigi: float = 60.0  # piksel: kavga için yakınlık mesafesi
+    kavga_hiz_esigi: float = 3.5  # piksel/kare: kavga hareketi min hız
+    kavga_min_cift: int = 1  # minimum yoğun hareket çifti (2-3 kişi için)
     kavga_yogunluk_esigi: float = 0.8
-    darboğaz_hiz_esigi: float = 0.5
-    darboğaz_yogunluk_esigi: float = 0.7
+    kavga_karsilikli_hareket: bool = True  # birbirine doğru hareket kontrolü
+    darbogaz_hiz_esigi: float = 0.5
+    darbogaz_yogunluk_esigi: float = 0.7
+    darbogaz_min_kisi: int = 5  # darboğaz için minimum kişi sayısı
     dusme_dikey_esigi: float = 50.0
+    dusme_kaybolma_guven: float = 0.25  # kaybolma durumunda güven skoru
     dagilma_merkezden_uzaklik_esigi: float = 3.0
     guven_minimum: float = 0.3
 

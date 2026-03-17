@@ -104,9 +104,9 @@ def kenar_cubugu():
         # Başlat / Durdur düğmeleri
         col1, col2 = st.columns(2)
         with col1:
-            baslat_btn = st.button("▶️ Başlat", use_container_width=True)
+            baslat_btn = st.button("▶️ Başlat", width="stretch")
         with col2:
-            durdur_btn = st.button("⏹️ Durdur", use_container_width=True)
+            durdur_btn = st.button("⏹️ Durdur", width="stretch")
 
         st.divider()
 
@@ -182,7 +182,7 @@ def yogunluk_haritasi_paneli():
         title="Kalabalık Yoğunluk Dağılımı",
     )
     fig.update_layout(height=300, margin=dict(l=0, r=0, t=30, b=0))
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
 
 def risk_zaman_cizelgesi_paneli():
@@ -225,7 +225,7 @@ def risk_zaman_cizelgesi_paneli():
         yaxis=dict(range=[0, 1]),
         margin=dict(l=0, r=0, t=10, b=0),
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
 
 def akil_yurütme_paneli():
@@ -269,7 +269,7 @@ def video_islem_dongusu(ork, video_kaynagi, kare_yeri):
         if cizilmis is not None:
             # BGR -> RGB dönüşümü
             rgb = cv2.cvtColor(cizilmis, cv2.COLOR_BGR2RGB)
-            kare_yeri.image(rgb, channels="RGB", use_container_width=True)
+            kare_yeri.image(rgb, channels="RGB", width="stretch")
 
         time.sleep(1.0 / yapilandirma.video.maks_fps)
 

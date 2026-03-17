@@ -264,16 +264,19 @@ class AnomalyAgent:
         Kavga kümesi anomalisi kontrolü.
 
         Kriterleri:
-        - Lokalize bölgede yüksek yoğunluk
-        - Yoğun hareket (yüksek optik akış büyüklüğü)
-        - Yakın mesafedeki kişiler arasında çarpışma benzeri hareketler
+        - Yakın mesafedeki kişiler (kavga_mesafe_esigi piksel içinde)
+        - Her iki kişi de yüksek hızda hareket ediyor (kavga_hiz_esigi üstü)
+        - Karşılıklı hareket: birbirine doğru yaklaşıyorlar
+        - Normal kalabalık yürüyüşü ile karıştırılmaması için sıkı eşikler
         """
         if len(kare_sonucu.tespitler) < 2:
             return None
 
-        # Yakın kişi çiftlerini bul
+        mesafe_esigi = self._esikler.kavga_mesafe_esigi
+        hiz_esigi = self._esikler.kavga_hiz_esigi
+
         yakin_ciftler = 0
-        yogun_hareket_cifti = 0
+        kavga_benzeri_cifti = 0
 
         tespitler = kare_sonucu.tespitler
         for i in range(len(tespitler)):
@@ -282,41 +285,61 @@ class AnomalyAgent:
                 m2 = bbox_merkez(tespitler[j].bbox)
                 mesafe = oklid_mesafesi(m1, m2)
 
-                if mesafe < 100:  # Yakın mesafe
+                if mesafe < mesafe_esigi:
                     yakin_ciftler += 1
 
-                    # Her iki kişi de hareket ediyorsa
-                    h1 = np.sqrt(
-                        tespitler[i].hiz_vektoru[0] ** 2
-                        + tespitler[i].hiz_vektoru[1] ** 2
-                    )
-                    h2 = np.sqrt(
-                        tespitler[j].hiz_vektoru[0] ** 2
-                        + tespitler[j].hiz_vektoru[1] ** 2
-                    )
-                    if h1 > 2.0 and h2 > 2.0:
-                        yogun_hareket_cifti += 1
+                    v1x, v1y = tespitler[i].hiz_vektoru
+                    v2x, v2y = tespitler[j].hiz_vektoru
+                    h1 = np.sqrt(v1x ** 2 + v1y ** 2)
+                    h2 = np.sqrt(v2x ** 2 + v2y ** 2)
 
-        # Yoğunluk kontrolü
-        yogunluk_maks = 0.0
-        if orunt_sonucu.yogunluk_izgarasi is not None:
-            yogunluk_maks = float(orunt_sonucu.yogunluk_izgarasi.max())
+                    if h1 < hiz_esigi or h2 < hiz_esigi:
+                        continue
 
-        if (
-            yogun_hareket_cifti >= 1
-            and yogunluk_maks > self._esikler.kavga_yogunluk_esigi * 0.5
-        ):
+                    # Karşılıklı hareket kontrolü: birbirine doğru yaklaşıyorlar mı?
+                    if self._esikler.kavga_karsilikli_hareket:
+                        # m1'den m2'ye yön
+                        dx = m2[0] - m1[0]
+                        dy = m2[1] - m1[1]
+                        norm = np.sqrt(dx ** 2 + dy ** 2)
+                        if norm > 0:
+                            dx /= norm
+                            dy /= norm
+                        # Kişi 1 m2'ye doğru mu? Kişi 2 m1'e doğru mu?
+                        yaklasma1 = v1x * dx + v1y * dy
+                        yaklasma2 = -(v2x * dx + v2y * dy)
+                        if yaklasma1 > 0 and yaklasma2 > 0:
+                            kavga_benzeri_cifti += 1
+                        # Aynı yerde salınım: her ikisi de hızlı ama karışık yönde
+                        elif h1 > hiz_esigi * 1.5 and h2 > hiz_esigi * 1.5:
+                            kavga_benzeri_cifti += 1
+                    else:
+                        kavga_benzeri_cifti += 1
+
+        if kavga_benzeri_cifti >= self._esikler.kavga_min_cift:
+            # Büyük kalabalıkta yüksek yakın çift sayısı normaldir
+            # Kavga için yakın çift oranı toplam çiftlere göre düşük olmalı
+            toplam_cift = len(tespitler) * (len(tespitler) - 1) // 2
+            kavga_orani = kavga_benzeri_cifti / max(toplam_cift, 1)
+
+            # Büyük kalabalıkta (10+ kişi) kavga oranı çok düşükse normaldir
+            if len(tespitler) >= 10 and kavga_orani < 0.05:
+                return None
+
             guven = min(
                 1.0,
-                yogun_hareket_cifti * 0.3 + yogunluk_maks * 0.4 + 0.2,
+                kavga_benzeri_cifti * 0.25 + kavga_orani * 0.5 + 0.2,
             )
+
+            if guven < self._esikler.guven_minimum:
+                return None
 
             return AnomaliSonucu(
                 anomali_tipi=AnomaliTipi.KAVGA_KUMESI,
                 guven_skoru=guven,
                 izgara_konumu=self._yogun_bolge_bul(orunt_sonucu),
                 zaman_damgasi=zaman,
-                kisi_sayisi=yakin_ciftler * 2,
+                kisi_sayisi=kavga_benzeri_cifti * 2,
                 kare_no=kare_sonucu.kare_no,
             )
 
@@ -332,10 +355,12 @@ class AnomalyAgent:
         Darboğaz anomalisi kontrolü.
 
         Kriterleri:
+        - Minimum kişi sayısı (darboğaz bireysel değil, kalabalık olayıdır)
         - Yüksek yoğunluk (kalabalık birikimi)
-        - Sıfıra yakın hız (hareket etmeme)
+        - Sıfıra yakın hız (hareket etmeme / sıkışma)
         """
-        if not kare_sonucu.tespitler:
+        kisi_sayisi = len(kare_sonucu.tespitler)
+        if kisi_sayisi < self._esikler.darbogaz_min_kisi:
             return None
 
         # Ortalama hız
@@ -360,12 +385,15 @@ class AnomalyAgent:
                 + yogunluk_maks * 0.5,
             )
 
+            if guven < self._esikler.guven_minimum:
+                return None
+
             return AnomaliSonucu(
                 anomali_tipi=AnomaliTipi.DARBOGAZ,
                 guven_skoru=guven,
                 izgara_konumu=self._yogun_bolge_bul(orunt_sonucu),
                 zaman_damgasi=zaman,
-                kisi_sayisi=len(kare_sonucu.tespitler),
+                kisi_sayisi=kisi_sayisi,
                 kare_no=kare_sonucu.kare_no,
             )
 
@@ -425,12 +453,16 @@ class AnomalyAgent:
                     )
 
         # Aniden kaybolan kişiler (potansiyel düşme)
-        if kaybolan_idler and len(kaybolan_idler) <= 2:
+        # Not: DeepSORT track kaybı normaldir, güven skoru düşük tutulur
+        if kaybolan_idler and len(kaybolan_idler) == 1:
             for kid in kaybolan_idler:
                 if kid in self._onceki_bbox:
+                    guven = self._esikler.dusme_kaybolma_guven
+                    if guven < self._esikler.guven_minimum:
+                        return None
                     return AnomaliSonucu(
                         anomali_tipi=AnomaliTipi.KISI_DUSMESI,
-                        guven_skoru=0.4,
+                        guven_skoru=guven,
                         izgara_konumu=(
                             int(bbox_merkez(self._onceki_bbox[kid])[0]),
                             int(bbox_merkez(self._onceki_bbox[kid])[1]),

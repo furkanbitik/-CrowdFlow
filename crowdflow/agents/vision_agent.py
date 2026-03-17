@@ -222,8 +222,13 @@ class VisionAgent:
             self._tracker.update_tracks([], frame=kare, embeds=[])
             return []
 
-        # Embedder devre dışı; her tespit için dummy embedding sağla
-        embeds = [np.zeros(128, dtype=np.float32) for _ in tespitler]
+        # Embedder devre dışı; her tespit için rastgele birim embedding sağla
+        # (sıfır vektör cosine similarity'de NaN üretir)
+        embeds = []
+        for _ in tespitler:
+            v = np.random.randn(128).astype(np.float32)
+            v /= np.linalg.norm(v) + 1e-8
+            embeds.append(v)
 
         # DeepSORT formatına çevir: ([x, y, w, h], confidence, class)
         tracks = self._tracker.update_tracks(
