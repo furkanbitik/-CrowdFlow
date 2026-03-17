@@ -83,17 +83,23 @@ class VisionAgent:
         try:
             import mediapipe as mp
 
-            self._poz_tahminci = mp.solutions.pose.Pose(
-                static_image_mode=yapilandirma.mediapipe.statik_goruntu_modu,
-                model_complexity=yapilandirma.mediapipe.model_karmasikligi,
-                smooth_landmarks=yapilandirma.mediapipe.duz_isaretler,
-                min_detection_confidence=yapilandirma.mediapipe.min_tespit_guveni,
-                min_tracking_confidence=yapilandirma.mediapipe.min_takip_guveni,
-            )
-            logger.info("MediaPipe poz tahmincisi başlatıldı.")
-        except Exception as e:
-            logger.error(f"MediaPipe başlatılamadı: {e}")
-            raise
+            # Yeni ve eski mediapipe sürümlerini destekle
+            if hasattr(mp, 'solutions') and hasattr(mp.solutions, 'pose'):
+                self._poz_tahminci = mp.solutions.pose.Pose(
+                    static_image_mode=yapilandirma.mediapipe.statik_goruntu_modu,
+                    model_complexity=yapilandirma.mediapipe.model_karmasikligi,
+                    smooth_landmarks=yapilandirma.mediapipe.duz_isaretler,
+                    min_detection_confidence=yapilandirma.mediapipe.min_tespit_guveni,
+                    min_tracking_confidence=yapilandirma.mediapipe.min_takip_guveni,
+                )
+                logger.info("MediaPipe poz tahmincisi başlatıldı.")
+            else:
+                self._poz_tahminci = None
+                logger.warning(
+                    "MediaPipe solutions API bulunamadı. "
+                    "Poz tahmini devre dışı bırakıldı. "
+                    "Uyumlu sürüm için: pip install mediapipe==0.10.9"
+                )
 
         self._baslatildi = True
         logger.info("VisionAgent başarıyla başlatıldı.")
@@ -252,6 +258,9 @@ class VisionAgent:
         y1 = max(0, y1)
         x2 = min(w, x2)
         y2 = min(h, y2)
+
+        if self._poz_tahminci is None:
+            return None
 
         if x2 <= x1 or y2 <= y1:
             return None
