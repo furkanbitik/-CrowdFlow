@@ -38,7 +38,7 @@ class DeepSORTAyarlari:
     maks_yas: int = 30
     n_baslangic: int = 3
     maks_iou_mesafesi: float = 0.7
-    gomme_modeli: Optional[str] = None
+    gomme_modeli: str = "mobilenet"
 
 
 @dataclass
