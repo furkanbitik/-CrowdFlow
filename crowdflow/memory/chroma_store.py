@@ -10,8 +10,8 @@ import json
 import time
 from typing import Optional
 
-from crowdflow.core.config import yapilandirma
-from crowdflow.core.utils import (
+from core.config import yapilandirma
+from core.utils import (
     ANOMALI_TURKCE,
     AnomaliSonucu,
     AnomaliTipi,

@@ -18,8 +18,8 @@ import cv2
 # Proje kök dizinini bul (scripts/ klasörünün bir üstü)
 PROJE_KOK = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
-UCSD_DIZIN = os.path.join(PROJE_KOK, "crowdflow", "data", "ucsd_raw", "UCSD_Anomaly_Dataset")
-CIKIS_DIZIN = os.path.join(PROJE_KOK, "crowdflow", "data", "videos")
+UCSD_DIZIN = os.path.join(PROJE_KOK, "data", "ucsd_raw", "UCSD_Anomaly_Dataset")
+CIKIS_DIZIN = os.path.join(PROJE_KOK, "data", "videos")
 FPS = 10
 
 # ── Klasörleri Oluştur ──────────────────────────────────────────────────────
@@ -86,4 +86,4 @@ print(f"TAMAMLANDI: {len(videolar)} video oluşturuldu.")
 print(f"Konum: {CIKIS_DIZIN}/")
 print(f"{'='*50}")
 print("\nArtık eğitimi başlatabilirsiniz:")
-print("  python -m crowdflow.models.train_autoencoder")
+print("  python -m models.train_autoencoder")

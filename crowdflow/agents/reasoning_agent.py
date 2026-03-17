@@ -9,8 +9,8 @@ açıklamaları üretir.
 import time
 from typing import Optional
 
-from crowdflow.core.config import yapilandirma
-from crowdflow.core.utils import (
+from core.config import yapilandirma
+from core.utils import (
     ANOMALI_TURKCE,
     RISK_EMOJILERI,
     AkillAnaliz,
@@ -21,7 +21,7 @@ from crowdflow.core.utils import (
     logger_olustur,
     zaman_damgasi_formatla,
 )
-from crowdflow.memory.chroma_store import ChromaDepo
+from memory.chroma_store import ChromaDepo
 
 logger = logger_olustur("ReasoningAgent")
 

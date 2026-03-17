@@ -15,9 +15,9 @@ from dotenv import load_dotenv
 # .env dosyasını yükle
 load_dotenv()
 
-# Proje kök dizini
-PROJE_KOK = Path(__file__).resolve().parent.parent.parent
-CROWDFLOW_KOK = Path(__file__).resolve().parent.parent
+# Proje kök dizini (crowdflow/ dizini)
+PROJE_KOK = Path(__file__).resolve().parent.parent
+CROWDFLOW_KOK = PROJE_KOK
 
 
 @dataclass

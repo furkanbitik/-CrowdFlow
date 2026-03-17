@@ -14,9 +14,9 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, Dataset
 
-from crowdflow.core.config import yapilandirma
-from crowdflow.core.utils import logger_olustur
-from crowdflow.models.autoencoder import KonvolusyonelOtoenkodor
+from core.config import yapilandirma
+from core.utils import logger_olustur
+from models.autoencoder import KonvolusyonelOtoenkodor
 
 logger = logger_olustur("OtoenkodorEgitim")
 

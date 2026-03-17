@@ -12,8 +12,8 @@ import cv2
 import numpy as np
 from scipy.ndimage import gaussian_filter
 
-from crowdflow.core.config import yapilandirma
-from crowdflow.core.utils import (
+from core.config import yapilandirma
+from core.utils import (
     KareSonucu,
     OruntSonucu,
     bbox_merkez,
