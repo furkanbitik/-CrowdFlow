@@ -24,7 +24,7 @@ CROWDFLOW_KOK = PROJE_KOK
 class YOLOAyarlari:
     """YOLOv8 insan tespiti yapılandırması."""
 
-    model_yolu: str = "yolov8n.pt"
+    model_yolu: str = "yolo26n.pt"
     guven_esigi: float = 0.5
     sinif_filtresi: list = field(default_factory=lambda: [0])  # 0 = insan sınıfı
     goruntu_boyutu: int = 640
@@ -91,21 +91,33 @@ class OtoenkodorAyarlari:
 
 @dataclass
 class AnomaliEsikleri:
-    """Anomali tespit eşik değerleri."""
+    """Suç odaklı anomali tespit eşik değerleri."""
 
     yeniden_yapilandirma_esigi: float = 0.02
-    panik_hiz_esigi: float = 5.0
-    kavga_mesafe_esigi: float = 60.0  # piksel: kavga için yakınlık mesafesi
-    kavga_hiz_esigi: float = 3.5  # piksel/kare: kavga hareketi min hız
-    kavga_min_cift: int = 1  # minimum yoğun hareket çifti (2-3 kişi için)
-    kavga_yogunluk_esigi: float = 0.8
-    kavga_karsilikli_hareket: bool = True  # birbirine doğru hareket kontrolü
-    darbogaz_hiz_esigi: float = 0.5
-    darbogaz_yogunluk_esigi: float = 0.7
-    darbogaz_min_kisi: int = 5  # darboğaz için minimum kişi sayısı
-    dusme_dikey_esigi: float = 50.0
-    dusme_kaybolma_guven: float = 0.25  # kaybolma durumunda güven skoru
-    dagilma_merkezden_uzaklik_esigi: float = 3.0
+    # Kavga tespiti
+    kavga_mesafe_esigi: float = 80.0  # piksel: kavga yakınlık mesafesi
+    kavga_hiz_esigi: float = 2.5  # piksel/kare: kavga hareketi min hız
+    kavga_min_cift: int = 1  # minimum kavga benzeri çift
+    # Saldırı tespiti
+    saldiri_mesafe_esigi: float = 120.0  # piksel: saldırgan yaklaşma mesafesi
+    saldiri_hiz_esigi: float = 4.0  # piksel/kare: agresif yaklaşma hızı
+    saldiri_hiz_farki: float = 2.0  # saldırgan vs kurban hız farkı
+    # Şüpheli davranış tespiti
+    suphe_hiz_degisim_esigi: float = 3.0  # ani hız değişimi eşiği
+    suphe_bekleme_hiz_esigi: float = 0.8  # "bekleme/pusu" hız üst sınırı
+    suphe_min_bekleme_karesi: int = 10  # min kaç kare hareketsiz
+    # Kişi düşmesi
+    dusme_dikey_esigi: float = 40.0  # bbox yükseklik düşüşü piksel
+    dusme_kaybolma_guven: float = 0.25
+    # Hırsızlık tespiti
+    hirsizlik_yaklasma_mesafesi: float = 60.0  # piksel: cep/çanta mesafesi
+    hirsizlik_temas_suresi: int = 5  # kare: minimum temas süresi
+    hirsizlik_kacis_hizi: float = 3.5  # piksel/kare: temastan sonra hızlı uzaklaşma
+    # Cinayet şüphesi
+    cinayet_siddet_suresi: int = 15  # kare: uzun süreli şiddetli temas
+    cinayet_hiz_esigi: float = 3.0  # yoğun hareket eşiği
+    cinayet_dusme_sonrasi_kare: int = 5  # düşme sonrası bekleme
+    # Genel
     guven_minimum: float = 0.3
 
 
@@ -134,12 +146,13 @@ class LLMAyarlari:
 class DashboardAyarlari:
     """Streamlit dashboard yapılandırması."""
 
-    sayfa_basligi: str = "CrowdFlow - Kalabalık Anomali Tespit Sistemi"
+    sayfa_basligi: str = "CrowdFlow - Suç Tespit ve Sosyolojik Analiz Sistemi"
     sayfa_ikonu: str = "🎯"
     yerlesim: str = "wide"
     fps_gosterge: bool = True
     maks_log_satiri: int = 100
     isitma_haritasi_renk_skalasi: str = "YlOrRd"
+    varsayilan_prompt: str = "Tehdit oluşturan durumları tespit et: kavga, şiddet, hırsızlık, saldırı."
 
 
 @dataclass

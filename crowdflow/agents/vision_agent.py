@@ -1,7 +1,7 @@
 """
 CrowdFlow VisionAgent Modülü
 
-YOLOv8 ile insan tespiti, DeepSORT ile çoklu nesne takibi ve
+YOLO26 ile insan tespiti, DeepSORT ile çoklu nesne takibi ve
 MediaPipe ile poz tahmini yaparak her kare için tespit sonuçları üretir.
 """
 
@@ -27,7 +27,7 @@ class VisionAgent:
     """
     Görüş Ajanı: İnsan tespiti, takibi ve poz tahmini.
 
-    YOLOv8 modeli ile karede insan tespiti yapar, DeepSORT ile
+    YOLO26 modeli ile karede insan tespiti yapar, DeepSORT ile
     kalıcı kimlik atar ve MediaPipe ile poz noktalarını çıkarır.
     """
 
@@ -52,16 +52,16 @@ class VisionAgent:
 
         logger.info("VisionAgent başlatılıyor...")
 
-        # YOLOv8 modelini yükle
+        # YOLO26 modelini yükle
         try:
             from ultralytics import YOLO
 
             self._yolo_model = YOLO(yapilandirma.yolo.model_yolu)
             logger.info(
-                f"YOLOv8 modeli yüklendi: {yapilandirma.yolo.model_yolu}"
+                f"YOLO26 modeli yüklendi: {yapilandirma.yolo.model_yolu}"
             )
         except Exception as e:
-            logger.error(f"YOLOv8 modeli yüklenemedi: {e}")
+            logger.error(f"YOLO26 modeli yüklenemedi: {e}")
             raise
 
         # DeepSORT takipçisini başlat
@@ -125,7 +125,7 @@ class VisionAgent:
         self._kare_sayaci += 1
         zaman = time.time()
 
-        # 1. YOLOv8 ile insan tespiti
+        # 1. YOLO26 ile insan tespiti
         tespitler_raw = self._insanlari_tespit_et(kare)
 
         # 2. DeepSORT ile takip
@@ -172,7 +172,7 @@ class VisionAgent:
 
     def _insanlari_tespit_et(self, kare: np.ndarray) -> list:
         """
-        YOLOv8 ile karede insan tespiti yapar.
+        YOLO26 ile karede insan tespiti yapar.
 
         Args:
             kare: BGR formatında görüntü.

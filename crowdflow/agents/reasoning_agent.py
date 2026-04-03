@@ -3,7 +3,7 @@ CrowdFlow ReasoningAgent Modülü
 
 LangChain ReAct ajanı kullanarak anomali olaylarını analiz eder,
 ChromaDB'den geçmiş olaylarla karşılaştırır ve Türkçe doğal dil
-açıklamaları üretir.
+açıklamaları üretir. Kullanıcı promptu ile sosyolojik analiz yapar.
 """
 
 import time
@@ -32,35 +32,33 @@ class ReasoningAgent:
 
     Anomali raporlarını alarak RAG ile geçmiş olaylarla karşılaştırır,
     risk seviyesi belirler ve Türkçe doğal dil açıklamaları üretir.
+    Kullanıcı promptu ile sosyolojik bağlam analizi yapar.
     """
 
     def __init__(self, chroma_depo: Optional[ChromaDepo] = None):
-        """
-        Args:
-            chroma_depo: ChromaDB vektör deposu örneği (paylaşımlı kullanım için).
-        """
         self._chroma_depo = chroma_depo or ChromaDepo()
         self._llm = None
         self._bellek = None
         self._ajan = None
         self._baslatildi: bool = False
         self._llm_kullanilabilir: bool = False
+        self._kullanici_promptu: str = yapilandirma.dashboard.varsayilan_prompt
+
+    def prompt_ayarla(self, prompt: str) -> None:
+        """Kullanıcı analiz promptunu günceller."""
+        self._kullanici_promptu = prompt
+        logger.info(f"Kullanıcı promptu güncellendi: {prompt[:50]}...")
 
     def baslat(self) -> None:
-        """
-        ReasoningAgent'ı başlatır: LLM, bellek ve araçlar.
-        """
         if self._baslatildi:
             logger.warning("ReasoningAgent zaten başlatılmış.")
             return
 
         logger.info("ReasoningAgent başlatılıyor...")
 
-        # ChromaDB deposunu başlat
         if not self._chroma_depo._baslatildi:
             self._chroma_depo.baslat()
 
-        # LangChain bileşenlerini başlat
         self._llm_baslat()
 
         self._baslatildi = True
@@ -113,34 +111,22 @@ class ReasoningAgent:
     def analiz_et(self, anomali: AnomaliSonucu) -> AkillAnaliz:
         """
         Anomali olayını analiz eder ve detaylı rapor üretir.
-
-        Args:
-            anomali: AnomalyAgent'tan gelen anomali sonucu.
-
-        Returns:
-            AkıllıAnaliz: Risk seviyesi, açıklama ve öneriler.
+        Kullanıcı promptunu bağlam olarak kullanır.
         """
         if not self._baslatildi:
             raise RuntimeError(
                 "ReasoningAgent başlatılmamış. Önce baslat() çağrın."
             )
 
-        # 1. Risk seviyesini belirle
         risk = self._risk_seviyesi_belirle(anomali)
-
-        # 2. Geçmiş olaylarla karşılaştır (RAG)
         gecmis = self._gecmis_olaylari_sorgula(anomali)
 
-        # 3. Analiz metni oluştur
         if self._llm_kullanilabilir:
             analiz = self._llm_ile_analiz(anomali, gecmis, risk)
         else:
             analiz = self._kural_tabanlı_analiz(anomali, gecmis, risk)
 
-        # 4. Olayı depoya kaydet
         self._chroma_depo.olay_kaydet(anomali, analiz.analiz_metni)
-
-        # 5. Tam raporu oluştur
         analiz.tam_rapor = anomali_raporu_formatla(analiz)
 
         logger.info(
@@ -151,63 +137,38 @@ class ReasoningAgent:
         return analiz
 
     def _risk_seviyesi_belirle(self, anomali: AnomaliSonucu) -> RiskSeviyesi:
-        """
-        Anomali tipine ve güven skoruna göre risk seviyesi belirler.
-
-        Args:
-            anomali: Anomali sonucu.
-
-        Returns:
-            RiskSeviyesi enum değeri.
-        """
+        """Anomali tipine ve güven skoruna göre risk seviyesi belirler."""
         guven = anomali.guven_skoru
         tip = anomali.anomali_tipi
 
-        # Tip bazlı temel risk
         tip_risk = {
-            AnomaliTipi.PANIK_KACIS: RiskSeviyesi.YUKSEK,
-            AnomaliTipi.KAVGA_KUMESI: RiskSeviyesi.YUKSEK,
-            AnomaliTipi.DARBOGAZ: RiskSeviyesi.ORTA,
+            AnomaliTipi.KAVGA: RiskSeviyesi.YUKSEK,
+            AnomaliTipi.SALDIRI: RiskSeviyesi.KRITIK,
+            AnomaliTipi.SUPHE_DAVRANIS: RiskSeviyesi.ORTA,
             AnomaliTipi.KISI_DUSMESI: RiskSeviyesi.ORTA,
-            AnomaliTipi.ANI_DAGILMA: RiskSeviyesi.KRITIK,
+            AnomaliTipi.HIRSIZLIK: RiskSeviyesi.YUKSEK,
+            AnomaliTipi.CINAYET_SUPHESI: RiskSeviyesi.KRITIK,
         }
 
         temel_risk = tip_risk.get(tip, RiskSeviyesi.DUSUK)
 
-        # Güven skoru ile ayarlama
+        siralama = [
+            RiskSeviyesi.DUSUK,
+            RiskSeviyesi.ORTA,
+            RiskSeviyesi.YUKSEK,
+            RiskSeviyesi.KRITIK,
+        ]
+        idx = siralama.index(temel_risk)
+
         if guven >= 0.9:
-            # Bir seviye yukarı
-            siralama = [
-                RiskSeviyesi.DUSUK,
-                RiskSeviyesi.ORTA,
-                RiskSeviyesi.YUKSEK,
-                RiskSeviyesi.KRITIK,
-            ]
-            idx = siralama.index(temel_risk)
             return siralama[min(idx + 1, len(siralama) - 1)]
         elif guven < 0.4:
-            # Bir seviye aşağı
-            siralama = [
-                RiskSeviyesi.DUSUK,
-                RiskSeviyesi.ORTA,
-                RiskSeviyesi.YUKSEK,
-                RiskSeviyesi.KRITIK,
-            ]
-            idx = siralama.index(temel_risk)
             return siralama[max(idx - 1, 0)]
 
         return temel_risk
 
     def _gecmis_olaylari_sorgula(self, anomali: AnomaliSonucu) -> str:
-        """
-        ChromaDB'den benzer geçmiş olayları sorgular.
-
-        Args:
-            anomali: Referans anomali.
-
-        Returns:
-            Geçmiş olayların özet metni.
-        """
+        """ChromaDB'den benzer geçmiş olayları sorgular."""
         benzer_olaylar = self._chroma_depo.benzer_olaylari_bul(anomali)
 
         if not benzer_olaylar:
@@ -233,22 +194,15 @@ class ReasoningAgent:
         gecmis: str,
         risk: RiskSeviyesi,
     ) -> AkillAnaliz:
-        """
-        LLM kullanarak detaylı analiz üretir.
-
-        Args:
-            anomali: Anomali sonucu.
-            gecmis: Geçmiş olay karşılaştırma metni.
-            risk: Belirlenen risk seviyesi.
-
-        Returns:
-            AkıllıAnaliz nesnesi.
-        """
+        """LLM kullanarak kullanıcı promptu bağlamında detaylı analiz üretir."""
         tip_turkce = ANOMALI_TURKCE.get(
             anomali.anomali_tipi, str(anomali.anomali_tipi)
         )
 
-        istem = f"""Sen bir kalabalık güvenlik analiz uzmanısın. Aşağıdaki anomali olayını Türkçe olarak analiz et.
+        istem = f"""Sen bir suç analizi ve sosyolojik davranış uzmanısın.
+Aşağıdaki anomali olayını Türkçe olarak analiz et.
+
+KULLANICI TALİMATI: {self._kullanici_promptu}
 
 Anomali Bilgileri:
 - Tip: {tip_turkce}
@@ -261,32 +215,38 @@ Anomali Bilgileri:
 Geçmiş Olaylar:
 {gecmis}
 
-Lütfen şunları üret:
-1. ANALIZ: 2-3 cümlelik Türkçe açıklama (durumun ne olduğu ve neden tehlikeli olabileceği)
-2. ONERI: Güvenlik ekibinin atması gereken somut adımlar (Türkçe)
+Kullanıcı talimatını dikkate alarak şunları üret:
+1. ANALIZ: 2-3 cümlelik Türkçe açıklama (durumun ne olduğu, sosyolojik bağlam, neden tehlikeli)
+2. SOSYOLOJIK: Kısa sosyolojik değerlendirme (liderlik, grup dinamiği, davranış kalıpları)
+3. ONERI: Güvenlik ekibinin atması gereken somut adımlar (Türkçe)
 
 Yanıtını şu formatta ver:
 ANALIZ: [analiz metni]
+SOSYOLOJIK: [sosyolojik değerlendirme]
 ONERI: [öneri metni]"""
 
         try:
             yanit = self._llm.invoke(istem)
             icerik = yanit.content
 
-            # Yanıtı ayrıştır
             analiz_metni = ""
+            sosyolojik = ""
             oneri_metni = ""
 
             for satir in icerik.split("\n"):
                 if satir.startswith("ANALIZ:"):
                     analiz_metni = satir[7:].strip()
+                elif satir.startswith("SOSYOLOJIK:"):
+                    sosyolojik = satir[11:].strip()
                 elif satir.startswith("ONERI:") or satir.startswith("ÖNERİ:"):
                     oneri_metni = satir.split(":", 1)[1].strip()
 
             if not analiz_metni:
                 analiz_metni = icerik[:200]
 
-            # Belleğe ekle
+            if sosyolojik:
+                analiz_metni = f"{analiz_metni}\n[Sosyolojik] {sosyolojik}"
+
             if self._bellek:
                 self._bellek.save_context(
                     {"input": f"Anomali: {tip_turkce}"},
@@ -311,51 +271,49 @@ ONERI: [öneri metni]"""
         gecmis: str,
         risk: RiskSeviyesi,
     ) -> AkillAnaliz:
-        """
-        LLM kullanılamadığında kural tabanlı analiz üretir.
-
-        Args:
-            anomali: Anomali sonucu.
-            gecmis: Geçmiş olay karşılaştırma metni.
-            risk: Risk seviyesi.
-
-        Returns:
-            AkıllıAnaliz nesnesi.
-        """
+        """LLM kullanılamadığında kural tabanlı analiz üretir."""
         tip = anomali.anomali_tipi
         tip_turkce = ANOMALI_TURKCE.get(tip, str(tip))
 
         analizler = {
-            AnomaliTipi.PANIK_KACIS: (
-                f"Bölgede {anomali.kisi_sayisi} kişilik bir grup ani ve hızlı bir "
-                f"şekilde merkezden uzaklaşıyor. Bu durum panik kaçışına işaret "
-                f"ediyor ve kalabalık ezilmesi riski taşıyor.",
-                "Güvenlik ekibini alarma geçirin. Kaçış yollarını açık tutun. "
-                "Anons sistemiyle sakin kalınması çağrısı yapın.",
+            AnomaliTipi.KAVGA: (
+                f"Bölgede {anomali.kisi_sayisi} kişi arasında fiziksel kavga "
+                f"tespit edildi. Karşılıklı agresif hareketler ve yakın temas "
+                f"gözlemleniyor. Ciddi yaralanma riski mevcut.",
+                "Güvenlik personelini derhal olay yerine yönlendirin. "
+                "Tarafları ayırın. Gerekirse kolluk kuvvetlerini bilgilendirin.",
             ),
-            AnomaliTipi.KAVGA_KUMESI: (
-                f"Lokalize bir bölgede {anomali.kisi_sayisi} kişi arasında yoğun "
-                f"fiziksel etkileşim tespit edildi. Kavga veya arbede riski mevcut.",
-                "Güvenlik personelini olay yerine yönlendirin. Kalabalığı "
-                "bölgeden uzaklaştırın. Gerekirse kolluk kuvvetlerini bilgilendirin.",
+            AnomaliTipi.SALDIRI: (
+                "Bir kişinin diğerine hızla yaklaşarak saldırı girişiminde "
+                "bulunduğu tespit edildi. Mağdurun hareket kabiliyeti sınırlı.",
+                "Acil güvenlik müdahalesi gerekli. Saldırganı etkisiz hale getirin. "
+                "Mağdura tıbbi yardım sağlayın. Kolluk kuvvetlerini arayın.",
             ),
-            AnomaliTipi.DARBOGAZ: (
-                f"Yüksek yoğunluklu bir bölgede {anomali.kisi_sayisi} kişi hareket "
-                f"edemez durumda sıkışmış. Darboğaz oluşumu ezilme tehlikesi yaratıyor.",
-                "Alternatif güzergahları açın. Kalabalık akışını yönlendirmek için "
-                "bariyerler yerleştirin. İtfaiye/ambulans hazır beklesin.",
+            AnomaliTipi.SUPHE_DAVRANIS: (
+                "Bölgede şüpheli davranış tespit edildi. Ani yön değişiklikleri "
+                "veya belirli bir noktada uzun süreli bekleme gözlemleniyor.",
+                "Güvenlik kameralarıyla kişiyi yakından takip edin. "
+                "Sivil güvenlik personelini bilgilendirin. Gerekirse kimlik kontrolü yapın.",
             ),
             AnomaliTipi.KISI_DUSMESI: (
-                "Takip edilen bir kişinin aniden düştüğü veya görüş alanından "
-                "kaybolduğu tespit edildi. Tıbbi acil durum olabilir.",
-                "En yakın sağlık ekibini yönlendirin. Çevredeki kalabalığı "
+                "Takip edilen bir kişinin aniden yere düştüğü tespit edildi. "
+                "Tıbbi acil durum veya saldırı sonucu olabilir.",
+                "En yakın sağlık ekibini yönlendirin. Çevredeki kişileri "
                 "uzaklaştırarak müdahale alanı oluşturun.",
             ),
-            AnomaliTipi.ANI_DAGILMA: (
-                f"{anomali.kisi_sayisi} kişilik grup aniden merkezden dışa doğru "
-                f"dağılıyor. Bu patlama veya tehdit algısına bağlı olabilir.",
-                "Bölgeyi derhal güvenlik kordonu altına alın. Tüm çıkışları "
-                "kontrol edin. Bomba imha ekibini bilgilendirin.",
+            AnomaliTipi.HIRSIZLIK: (
+                f"Yankesicilik/hırsızlık şüphesi tespit edildi. İki kişi kısa "
+                f"süreli yakın temasta bulundu ve ardından biri hızla uzaklaştı. "
+                f"Klasik yankesicilik paterni.",
+                "Hızla uzaklaşan kişiyi güvenlik kameralarıyla takip edin. "
+                "Mağdura durumu bildirin. Çıkış noktalarına güvenlik yönlendirin.",
+            ),
+            AnomaliTipi.CINAYET_SUPHESI: (
+                f"Ciddi şiddet olayı şüphesi: {anomali.kisi_sayisi} kişi arasında "
+                f"uzun süreli agresif temas sonrası bir kişi yere düştü. "
+                f"Hayati tehlike riski yüksek.",
+                "ACİL: Kolluk kuvvetleri ve ambulans çağrın. Bölgeyi kordon altına alın. "
+                "Şüpheliyi kaçmasına izin vermeden tespit edin. Kamera kayıtlarını saklayın.",
             ),
         }
 
@@ -366,6 +324,10 @@ ONERI: [öneri metni]"""
                 "Güvenlik ekibini bilgilendirin.",
             ),
         )
+
+        # Kullanıcı promptuna göre ek sosyolojik bağlam
+        if self._kullanici_promptu:
+            analiz_metni += f"\n[Prompt Bağlamı: {self._kullanici_promptu[:80]}]"
 
         return AkillAnaliz(
             anomali=anomali,

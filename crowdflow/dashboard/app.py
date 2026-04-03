@@ -1,7 +1,7 @@
 """
 CrowdFlow Streamlit Dashboard
 
-Gerçek zamanlı kalabalık anomali tespit sisteminin ana kontrol paneli.
+YOLO26 + Prompt tabanlı suç tespit ve sosyolojik analiz sistemi.
 Canlı video akışı, anomali logları, yoğunluk ısı haritası ve
 risk zaman çizelgesi görüntülenir.
 """
@@ -50,12 +50,14 @@ def baslat_durumu():
         st.session_state.calisiyor = False
     if "anomali_logu" not in st.session_state:
         st.session_state.anomali_logu = []
+    if "analiz_promptu" not in st.session_state:
+        st.session_state.analiz_promptu = yapilandirma.dashboard.varsayilan_prompt
 
 
 def ana_baslik():
     """Ana başlık ve açıklama."""
     st.title("🎯 CrowdFlow")
-    st.caption("Ajanistik Kalabalık Anomali Tespit Sistemi")
+    st.caption("YOLO26 + Prompt Tabanlı Suç Tespit ve Sosyolojik Analiz Sistemi")
     st.divider()
 
 
@@ -63,6 +65,39 @@ def kenar_cubugu():
     """Sol kenar çubuğu kontrolleri."""
     with st.sidebar:
         st.header("⚙️ Kontrol Paneli")
+
+        # Analiz Promptu
+        st.subheader("🧠 Analiz Promptu")
+        prompt = st.text_area(
+            "Sosyolojik / Suç Analizi Talimatı",
+            value=st.session_state.get(
+                "analiz_promptu",
+                yapilandirma.dashboard.varsayilan_prompt,
+            ),
+            height=100,
+            help="Sistemin nelere odaklanacağını belirleyin. "
+                 "Örn: 'Lider özellikli insanı tespit et', "
+                 "'Kavga ve şiddet durumlarını analiz et', "
+                 "'Hırsızlık ve yankesicilik şüphesi ara'",
+        )
+        st.session_state.analiz_promptu = prompt
+
+        # Hazır prompt şablonları
+        sablon = st.selectbox(
+            "Hazır Şablonlar",
+            options=[
+                "",
+                "Tehdit tespiti: kavga, şiddet, hırsızlık, saldırı",
+                "Lider analizi: grup dinamiğinde lider özellikli kişileri tespit et",
+                "Yankesicilik: kısa temas sonrası hızlı uzaklaşma paternlerini ara",
+                "Cinayet şüphesi: uzun süreli şiddetli temas ve düşme kombinasyonu",
+                "Genel sosyolojik: grup davranışlarını ve anomalileri analiz et",
+            ],
+        )
+        if sablon:
+            st.session_state.analiz_promptu = sablon
+
+        st.divider()
 
         # Video modu seçimi
         mod = st.radio(
@@ -285,11 +320,19 @@ def main():
     # Orkestratör
     ork = orkestrator_al()
 
+    # Promptu orkestratöre ilet
+    mevcut_prompt = st.session_state.get(
+        "analiz_promptu", yapilandirma.dashboard.varsayilan_prompt
+    )
+    if st.session_state.baslatildi:
+        ork.prompt_ayarla(mevcut_prompt)
+
     # Başlat/Durdur işlemleri
     if baslat_btn:
         if not st.session_state.baslatildi:
-            with st.spinner("Sistem başlatılıyor..."):
+            with st.spinner("Sistem başlatılıyor (YOLO26)..."):
                 ork.baslat()
+                ork.prompt_ayarla(mevcut_prompt)
                 st.session_state.baslatildi = True
         st.session_state.calisiyor = True
 

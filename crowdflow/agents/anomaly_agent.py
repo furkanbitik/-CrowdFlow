@@ -1,15 +1,15 @@
 """
-CrowdFlow AnomalyAgent Modülü (ÇEKIRDEK AJAN)
+CrowdFlow AnomalyAgent Modülü (SUÇ ODAKLI)
 
-Konvolüsyonel otoenkodör tabanlı anomali tespiti yapar. Kayan pencere
-yeniden yapılandırma hatasını anomali skoru olarak kullanır ve tespit
-edilen anomalileri 5 türe sınıflandırır:
+Kural tabanlı ve otoenkodör destekli suç tespiti yapar.
+Tespit edilen anomaliler 6 suç türüne sınıflandırılır:
 
-1. PANIK_KACIS: Ani yüksek hız, merkezden uzaklaşma
-2. KAVGA_KUMESI: Lokalize yoğun hareket + poz çarpışmaları
-3. DARBOGAZ: Yüksek yoğunluk + sıfıra yakın hız
-4. KISI_DUSMESI: Tek kişinin dikey düşüşü veya kaybolması
-5. ANI_DAGILMA: Merkezden dışa doğru patlama örüntüsü
+1. KAVGA: Yakın mesafedeki kişiler arasında yoğun karşılıklı hareket
+2. SALDIRI: Bir kişinin diğerine agresif yaklaşması/kovalama
+3. SUPHE_DAVRANIS: Pusuya yatma, ani yön değişimi, takip etme
+4. KISI_DUSMESI: Saldırı sonucu yere düşme/kaybolma
+5. HIRSIZLIK: Yakın temas sonrası hızlı uzaklaşma (yankesicilik paterni)
+6. CINAYET_SUPHESI: Uzun süreli şiddetli temas + düşme kombinasyonu
 """
 
 import os
@@ -38,15 +38,13 @@ logger = logger_olustur("AnomalyAgent")
 
 class AnomalyAgent:
     """
-    Anomali Tespit Ajanı: Otoenkodör ve kural tabanlı hibrit anomali tespiti.
+    Suç Odaklı Anomali Tespit Ajanı.
 
-    Konvolüsyonel otoenkodörün yeniden yapılandırma hatası ile birlikte
-    hareket ve yoğunluk tabanlı kuralları kullanarak anomalileri tespit
-    ve sınıflandırır.
+    Hareket analizi ve mesafe tabanlı kurallarla kavga, saldırı,
+    şüpheli davranış ve kişi düşmesi tespiti yapar.
     """
 
     def __init__(self):
-        """AnomalyAgent'ı yapılandırma değerleriyle başlatır."""
         self._model: Optional[KonvolusyonelOtoenkodor] = None
         self._cihaz = torch.device(
             "cuda" if torch.cuda.is_available() else "cpu"
@@ -57,14 +55,14 @@ class AnomalyAgent:
         )
         self._onceki_idler: set = set()
         self._onceki_bbox: dict = {}  # {id: bbox}
+        self._onceki_hizlar: dict = {}  # {id: (vx, vy)} — şüpheli davranış için
+        self._bekleme_sayaci: dict = {}  # {id: kare_sayisi} — pusu tespiti
+        self._yakin_temas: dict = {}  # {(id1,id2): kare_sayisi} — hırsızlık/cinayet
+        self._siddet_sayaci: dict = {}  # {(id1,id2): kare_sayisi} — cinayet şüphesi
+        self._dusme_sonrasi: dict = {}  # {id: kare_sayisi} — düşme sonrası izleme
         self._baslatildi: bool = False
 
     def baslat(self) -> None:
-        """
-        Otoenkodör modelini yükler ve ajanı başlatır.
-
-        Eğitilmiş model varsa yükler, yoksa yeni model oluşturur.
-        """
         if self._baslatildi:
             logger.warning("AnomalyAgent zaten başlatılmış.")
             return
@@ -94,16 +92,6 @@ class AnomalyAgent:
         kare_sonucu: KareSonucu,
         orunt_sonucu: OruntSonucu,
     ) -> list:
-        """
-        Kare ve örüntü verilerini analiz ederek anomali tespiti yapar.
-
-        Args:
-            kare_sonucu: VisionAgent çıktısı.
-            orunt_sonucu: PatternAgent çıktısı.
-
-        Returns:
-            Tespit edilen anomalilerin listesi (AnomaliSonucu).
-        """
         if not self._baslatildi:
             raise RuntimeError("AnomalyAgent başlatılmamış. Önce baslat() çağrın.")
 
@@ -113,36 +101,30 @@ class AnomalyAgent:
         # Otoenkodör tabanlı anomali skoru
         ae_skoru = self._otoenkodor_skoru_hesapla(kare_sonucu.kare)
 
-        # Kural tabanlı anomali tespitleri
-        panik = self._panik_kacis_kontrol(
-            kare_sonucu, orunt_sonucu, zaman
-        )
-        if panik:
-            anomaliler.append(panik)
-
-        kavga = self._kavga_kumesi_kontrol(
-            kare_sonucu, orunt_sonucu, zaman
-        )
+        # Suç odaklı anomali tespitleri
+        kavga = self._kavga_kontrol(kare_sonucu, orunt_sonucu, zaman)
         if kavga:
             anomaliler.append(kavga)
 
-        darbogaz = self._darbogaz_kontrol(
-            kare_sonucu, orunt_sonucu, zaman
-        )
-        if darbogaz:
-            anomaliler.append(darbogaz)
+        saldiri = self._saldiri_kontrol(kare_sonucu, orunt_sonucu, zaman)
+        if saldiri:
+            anomaliler.append(saldiri)
 
-        dusme = self._kisi_dusmesi_kontrol(
-            kare_sonucu, zaman
-        )
+        suphe = self._suphe_davranis_kontrol(kare_sonucu, orunt_sonucu, zaman)
+        if suphe:
+            anomaliler.append(suphe)
+
+        dusme = self._kisi_dusmesi_kontrol(kare_sonucu, zaman)
         if dusme:
             anomaliler.append(dusme)
 
-        dagilma = self._ani_dagilma_kontrol(
-            kare_sonucu, orunt_sonucu, zaman
-        )
-        if dagilma:
-            anomaliler.append(dagilma)
+        hirsizlik = self._hirsizlik_kontrol(kare_sonucu, orunt_sonucu, zaman)
+        if hirsizlik:
+            anomaliler.append(hirsizlik)
+
+        cinayet = self._cinayet_suphesi_kontrol(kare_sonucu, orunt_sonucu, zaman)
+        if cinayet:
+            anomaliler.append(cinayet)
 
         # Otoenkodör skoru ile güven değerlerini güçlendir
         if ae_skoru is not None and ae_skoru > self._esikler.yeniden_yapilandirma_esigi:
@@ -163,15 +145,6 @@ class AnomalyAgent:
     def _otoenkodor_skoru_hesapla(
         self, kare: Optional[np.ndarray]
     ) -> Optional[float]:
-        """
-        Otoenkodör ile yeniden yapılandırma hatası hesaplar.
-
-        Args:
-            kare: BGR görüntü karesi.
-
-        Returns:
-            Ortalama yeniden yapılandırma hatası veya None.
-        """
         if kare is None or self._model is None:
             return None
 
@@ -192,91 +165,28 @@ class AnomalyAgent:
 
         return float(skor.mean())
 
-    def _panik_kacis_kontrol(
+    # ── KAVGA TESPİTİ ──────────────────────────────────────────────────────
+
+    def _kavga_kontrol(
         self,
         kare_sonucu: KareSonucu,
         orunt_sonucu: OruntSonucu,
         zaman: float,
     ) -> Optional[AnomaliSonucu]:
         """
-        Panik kaçış anomalisi kontrolü.
+        Kavga tespiti: Yakın mesafedeki kişilerin yoğun, düzensiz hareketi.
 
-        Kriterleri:
-        - Ortalama hız eşik değerini aşıyor
-        - Hareket yönü merkezden dışa doğru (merkezcil)
-        """
-        if not kare_sonucu.tespitler:
-            return None
-
-        hizlar = []
-        merkezden_uzaklasma = 0
-
-        kare = kare_sonucu.kare
-        if kare is not None:
-            kare_merkez = (kare.shape[1] / 2, kare.shape[0] / 2)
-        else:
-            kare_merkez = (320, 240)
-
-        for tespit in kare_sonucu.tespitler:
-            vx, vy = tespit.hiz_vektoru
-            hiz = np.sqrt(vx ** 2 + vy ** 2)
-            hizlar.append(hiz)
-
-            # Merkezden uzaklaşma kontrolü
-            merkez = bbox_merkez(tespit.bbox)
-            yon_x = merkez[0] - kare_merkez[0]
-            yon_y = merkez[1] - kare_merkez[1]
-            hareket_yonu = vx * yon_x + vy * yon_y
-            if hareket_yonu > 0:
-                merkezden_uzaklasma += 1
-
-        ort_hiz = np.mean(hizlar) if hizlar else 0
-        uzaklasma_orani = (
-            merkezden_uzaklasma / len(kare_sonucu.tespitler)
-            if kare_sonucu.tespitler
-            else 0
-        )
-
-        if (
-            ort_hiz > self._esikler.panik_hiz_esigi
-            and uzaklasma_orani > 0.6
-        ):
-            guven = min(1.0, (ort_hiz / self._esikler.panik_hiz_esigi) * 0.5 + uzaklasma_orani * 0.5)
-
-            return AnomaliSonucu(
-                anomali_tipi=AnomaliTipi.PANIK_KACIS,
-                guven_skoru=guven,
-                izgara_konumu=self._yogun_bolge_bul(orunt_sonucu),
-                zaman_damgasi=zaman,
-                kisi_sayisi=len(kare_sonucu.tespitler),
-                kare_no=kare_sonucu.kare_no,
-            )
-
-        return None
-
-    def _kavga_kumesi_kontrol(
-        self,
-        kare_sonucu: KareSonucu,
-        orunt_sonucu: OruntSonucu,
-        zaman: float,
-    ) -> Optional[AnomaliSonucu]:
-        """
-        Kavga kümesi anomalisi kontrolü.
-
-        Kriterleri:
-        - Yakın mesafedeki kişiler (kavga_mesafe_esigi piksel içinde)
-        - Her iki kişi de yüksek hızda hareket ediyor (kavga_hiz_esigi üstü)
-        - Karşılıklı hareket: birbirine doğru yaklaşıyorlar
-        - Normal kalabalık yürüyüşü ile karıştırılmaması için sıkı eşikler
+        Kriterler:
+        - En az 2 kişi yakın mesafede (kavga_mesafe_esigi)
+        - Her ikisi de yüksek hızda hareket ediyor (kavga_hiz_esigi)
+        - Karşılıklı hareket VEYA yoğun salınım (kavga hareketleri)
         """
         if len(kare_sonucu.tespitler) < 2:
             return None
 
         mesafe_esigi = self._esikler.kavga_mesafe_esigi
         hiz_esigi = self._esikler.kavga_hiz_esigi
-
-        yakin_ciftler = 0
-        kavga_benzeri_cifti = 0
+        kavga_ciftleri = 0
 
         tespitler = kare_sonucu.tespitler
         for i in range(len(tespitler)):
@@ -285,119 +195,212 @@ class AnomalyAgent:
                 m2 = bbox_merkez(tespitler[j].bbox)
                 mesafe = oklid_mesafesi(m1, m2)
 
-                if mesafe < mesafe_esigi:
-                    yakin_ciftler += 1
+                if mesafe >= mesafe_esigi:
+                    continue
 
-                    v1x, v1y = tespitler[i].hiz_vektoru
-                    v2x, v2y = tespitler[j].hiz_vektoru
-                    h1 = np.sqrt(v1x ** 2 + v1y ** 2)
-                    h2 = np.sqrt(v2x ** 2 + v2y ** 2)
+                v1x, v1y = tespitler[i].hiz_vektoru
+                v2x, v2y = tespitler[j].hiz_vektoru
+                h1 = np.sqrt(v1x ** 2 + v1y ** 2)
+                h2 = np.sqrt(v2x ** 2 + v2y ** 2)
 
-                    if h1 < hiz_esigi or h2 < hiz_esigi:
-                        continue
+                # En az biri hızlı hareket etmeli
+                if h1 < hiz_esigi and h2 < hiz_esigi:
+                    continue
 
-                    # Karşılıklı hareket kontrolü: birbirine doğru yaklaşıyorlar mı?
-                    if self._esikler.kavga_karsilikli_hareket:
-                        # m1'den m2'ye yön
-                        dx = m2[0] - m1[0]
-                        dy = m2[1] - m1[1]
-                        norm = np.sqrt(dx ** 2 + dy ** 2)
-                        if norm > 0:
-                            dx /= norm
-                            dy /= norm
-                        # Kişi 1 m2'ye doğru mu? Kişi 2 m1'e doğru mu?
-                        yaklasma1 = v1x * dx + v1y * dy
-                        yaklasma2 = -(v2x * dx + v2y * dy)
-                        if yaklasma1 > 0 and yaklasma2 > 0:
-                            kavga_benzeri_cifti += 1
-                        # Aynı yerde salınım: her ikisi de hızlı ama karışık yönde
-                        elif h1 > hiz_esigi * 1.5 and h2 > hiz_esigi * 1.5:
-                            kavga_benzeri_cifti += 1
-                    else:
-                        kavga_benzeri_cifti += 1
+                # Karşılıklı hareket: birbirine doğru yaklaşma
+                dx = m2[0] - m1[0]
+                dy = m2[1] - m1[1]
+                norm = np.sqrt(dx ** 2 + dy ** 2)
+                if norm > 0:
+                    dx /= norm
+                    dy /= norm
 
-        if kavga_benzeri_cifti >= self._esikler.kavga_min_cift:
-            # Büyük kalabalıkta yüksek yakın çift sayısı normaldir
-            # Kavga için yakın çift oranı toplam çiftlere göre düşük olmalı
-            toplam_cift = len(tespitler) * (len(tespitler) - 1) // 2
-            kavga_orani = kavga_benzeri_cifti / max(toplam_cift, 1)
+                yaklasma1 = v1x * dx + v1y * dy
+                yaklasma2 = -(v2x * dx + v2y * dy)
 
-            # Büyük kalabalıkta (10+ kişi) kavga oranı çok düşükse normaldir
-            if len(tespitler) >= 10 and kavga_orani < 0.05:
-                return None
+                # Senaryo 1: Birbirine doğru hareket
+                if yaklasma1 > 0 and yaklasma2 > 0:
+                    kavga_ciftleri += 1
+                # Senaryo 2: Aynı yerde yoğun salınım (boğuşma)
+                elif h1 > hiz_esigi and h2 > hiz_esigi and mesafe < mesafe_esigi * 0.7:
+                    kavga_ciftleri += 1
+                # Senaryo 3: Biri hızlı, diğeri de yakında ve hareketli
+                elif max(h1, h2) > hiz_esigi * 1.5 and min(h1, h2) > hiz_esigi * 0.5:
+                    kavga_ciftleri += 1
 
-            guven = min(
-                1.0,
-                kavga_benzeri_cifti * 0.25 + kavga_orani * 0.5 + 0.2,
-            )
-
-            if guven < self._esikler.guven_minimum:
-                return None
+        if kavga_ciftleri >= self._esikler.kavga_min_cift:
+            guven = min(1.0, 0.4 + kavga_ciftleri * 0.3)
 
             return AnomaliSonucu(
-                anomali_tipi=AnomaliTipi.KAVGA_KUMESI,
+                anomali_tipi=AnomaliTipi.KAVGA,
                 guven_skoru=guven,
                 izgara_konumu=self._yogun_bolge_bul(orunt_sonucu),
                 zaman_damgasi=zaman,
-                kisi_sayisi=kavga_benzeri_cifti * 2,
+                kisi_sayisi=min(kavga_ciftleri * 2, len(tespitler)),
                 kare_no=kare_sonucu.kare_no,
             )
 
         return None
 
-    def _darbogaz_kontrol(
+    # ── SALDIRI TESPİTİ ────────────────────────────────────────────────────
+
+    def _saldiri_kontrol(
         self,
         kare_sonucu: KareSonucu,
         orunt_sonucu: OruntSonucu,
         zaman: float,
     ) -> Optional[AnomaliSonucu]:
         """
-        Darboğaz anomalisi kontrolü.
+        Saldırı tespiti: Bir kişinin diğerine agresif yaklaşması.
 
-        Kriterleri:
-        - Minimum kişi sayısı (darboğaz bireysel değil, kalabalık olayıdır)
-        - Yüksek yoğunluk (kalabalık birikimi)
-        - Sıfıra yakın hız (hareket etmeme / sıkışma)
+        Kriterler:
+        - Bir kişi yüksek hızla başka birine doğru koşuyor
+        - Hedef kişi durağan veya çok daha yavaş
+        - İkisi arasında belirli mesafe var (henüz çok yakın değil)
         """
-        kisi_sayisi = len(kare_sonucu.tespitler)
-        if kisi_sayisi < self._esikler.darbogaz_min_kisi:
+        if len(kare_sonucu.tespitler) < 2:
             return None
 
-        # Ortalama hız
-        hizlar = [
-            np.sqrt(t.hiz_vektoru[0] ** 2 + t.hiz_vektoru[1] ** 2)
-            for t in kare_sonucu.tespitler
-        ]
-        ort_hiz = np.mean(hizlar)
+        mesafe_esigi = self._esikler.saldiri_mesafe_esigi
+        hiz_esigi = self._esikler.saldiri_hiz_esigi
+        hiz_farki_esigi = self._esikler.saldiri_hiz_farki
 
-        # Yoğunluk
-        yogunluk_maks = 0.0
-        if orunt_sonucu.yogunluk_izgarasi is not None:
-            yogunluk_maks = float(orunt_sonucu.yogunluk_izgarasi.max())
+        tespitler = kare_sonucu.tespitler
+        for i in range(len(tespitler)):
+            v1x, v1y = tespitler[i].hiz_vektoru
+            h1 = np.sqrt(v1x ** 2 + v1y ** 2)
 
-        if (
-            ort_hiz < self._esikler.darbogaz_hiz_esigi
-            and yogunluk_maks > self._esikler.darbogaz_yogunluk_esigi
-        ):
-            guven = min(
-                1.0,
-                (1.0 - ort_hiz / self._esikler.darbogaz_hiz_esigi) * 0.5
-                + yogunluk_maks * 0.5,
-            )
+            if h1 < hiz_esigi:
+                continue  # Yeterince hızlı değil
 
-            if guven < self._esikler.guven_minimum:
-                return None
+            m1 = bbox_merkez(tespitler[i].bbox)
 
-            return AnomaliSonucu(
-                anomali_tipi=AnomaliTipi.DARBOGAZ,
-                guven_skoru=guven,
-                izgara_konumu=self._yogun_bolge_bul(orunt_sonucu),
-                zaman_damgasi=zaman,
-                kisi_sayisi=kisi_sayisi,
-                kare_no=kare_sonucu.kare_no,
-            )
+            for j in range(len(tespitler)):
+                if i == j:
+                    continue
+
+                m2 = bbox_merkez(tespitler[j].bbox)
+                mesafe = oklid_mesafesi(m1, m2)
+
+                if mesafe >= mesafe_esigi or mesafe < 30:
+                    continue  # Çok uzak veya zaten çok yakın (kavga olur)
+
+                v2x, v2y = tespitler[j].hiz_vektoru
+                h2 = np.sqrt(v2x ** 2 + v2y ** 2)
+
+                # Hız farkı: saldırgan çok daha hızlı
+                if (h1 - h2) < hiz_farki_esigi:
+                    continue
+
+                # Yön kontrolü: saldırgan hedefe doğru mu koşuyor?
+                dx = m2[0] - m1[0]
+                dy = m2[1] - m1[1]
+                norm = np.sqrt(dx ** 2 + dy ** 2)
+                if norm > 0:
+                    dx /= norm
+                    dy /= norm
+
+                yaklasma = v1x * dx + v1y * dy
+                if yaklasma > hiz_esigi * 0.5:  # Hedefe doğru yeterli hız bileşeni
+                    guven = min(1.0, 0.3 + (h1 / hiz_esigi) * 0.3 + (yaklasma / h1) * 0.3)
+
+                    return AnomaliSonucu(
+                        anomali_tipi=AnomaliTipi.SALDIRI,
+                        guven_skoru=guven,
+                        izgara_konumu=(int(m1[0]), int(m1[1])),
+                        zaman_damgasi=zaman,
+                        kisi_sayisi=2,
+                        kare_no=kare_sonucu.kare_no,
+                    )
 
         return None
+
+    # ── ŞÜPHELİ DAVRANIŞ TESPİTİ ──────────────────────────────────────────
+
+    def _suphe_davranis_kontrol(
+        self,
+        kare_sonucu: KareSonucu,
+        orunt_sonucu: OruntSonucu,
+        zaman: float,
+    ) -> Optional[AnomaliSonucu]:
+        """
+        Şüpheli davranış tespiti.
+
+        Kriterler:
+        - Ani yön değişimi (hız vektörü ters dönme)
+        - Uzun süre aynı yerde bekleme/pusuya yatma
+        """
+        if not kare_sonucu.tespitler:
+            return None
+
+        for tespit in kare_sonucu.tespitler:
+            tid = tespit.id
+            vx, vy = tespit.hiz_vektoru
+            hiz = np.sqrt(vx ** 2 + vy ** 2)
+
+            # --- Ani yön değişimi kontrolü ---
+            if tid in self._onceki_hizlar:
+                pvx, pvy = self._onceki_hizlar[tid]
+                phiz = np.sqrt(pvx ** 2 + pvy ** 2)
+
+                if phiz > 1.0 and hiz > 1.0:
+                    # Hız vektörleri arasındaki açı değişimi
+                    dot = vx * pvx + vy * pvy
+                    cos_aci = dot / (hiz * phiz)
+
+                    # Neredeyse ters yön (-1'e yakın cos) ve yüksek hız
+                    if cos_aci < -0.5 and max(hiz, phiz) > self._esikler.suphe_hiz_degisim_esigi:
+                        guven = min(1.0, 0.4 + abs(cos_aci) * 0.4)
+
+                        if guven >= self._esikler.guven_minimum:
+                            return AnomaliSonucu(
+                                anomali_tipi=AnomaliTipi.SUPHE_DAVRANIS,
+                                guven_skoru=guven,
+                                izgara_konumu=(
+                                    int(bbox_merkez(tespit.bbox)[0]),
+                                    int(bbox_merkez(tespit.bbox)[1]),
+                                ),
+                                zaman_damgasi=zaman,
+                                kisi_sayisi=1,
+                                kare_no=kare_sonucu.kare_no,
+                            )
+
+            # --- Bekleme/pusu kontrolü ---
+            if hiz < self._esikler.suphe_bekleme_hiz_esigi:
+                self._bekleme_sayaci[tid] = self._bekleme_sayaci.get(tid, 0) + 1
+            else:
+                self._bekleme_sayaci[tid] = 0
+
+            if self._bekleme_sayaci.get(tid, 0) >= self._esikler.suphe_min_bekleme_karesi:
+                # Uzun süre hareketsiz bekleme + yakında başka kişiler var mı?
+                m1 = bbox_merkez(tespit.bbox)
+                yakin_kisi_var = False
+                for diger in kare_sonucu.tespitler:
+                    if diger.id == tid:
+                        continue
+                    m2 = bbox_merkez(diger.bbox)
+                    if oklid_mesafesi(m1, m2) < 200:
+                        yakin_kisi_var = True
+                        break
+
+                if yakin_kisi_var:
+                    bekleme = self._bekleme_sayaci[tid]
+                    guven = min(1.0, 0.3 + (bekleme / (self._esikler.suphe_min_bekleme_karesi * 3)) * 0.5)
+
+                    if guven >= self._esikler.guven_minimum:
+                        self._bekleme_sayaci[tid] = 0  # Sıfırla, tekrar tetiklemesin
+                        return AnomaliSonucu(
+                            anomali_tipi=AnomaliTipi.SUPHE_DAVRANIS,
+                            guven_skoru=guven,
+                            izgara_konumu=(int(m1[0]), int(m1[1])),
+                            zaman_damgasi=zaman,
+                            kisi_sayisi=1,
+                            kare_no=kare_sonucu.kare_no,
+                        )
+
+        return None
+
+    # ── KİŞİ DÜŞMESİ TESPİTİ ──────────────────────────────────────────────
 
     def _kisi_dusmesi_kontrol(
         self,
@@ -405,18 +408,10 @@ class AnomalyAgent:
         zaman: float,
     ) -> Optional[AnomaliSonucu]:
         """
-        Kişi düşmesi anomalisi kontrolü.
-
-        Kriterleri:
-        - Takip edilen kişinin aniden kaybolması
-        - Sınırlayıcı kutunun dikey yönde dramatik değişmesi
+        Kişi düşmesi: bbox yüksekliğinin dramatik düşüşü (saldırı sonucu).
         """
         mevcut_idler = {t.id for t in kare_sonucu.tespitler}
 
-        # Kaybolma kontrolü
-        kaybolan_idler = self._onceki_idler - mevcut_idler
-
-        # Dikey düşüş kontrolü
         for tespit in kare_sonucu.tespitler:
             if tespit.id in self._onceki_bbox:
                 onceki = self._onceki_bbox[tespit.id]
@@ -426,7 +421,6 @@ class AnomalyAgent:
                 onceki_yukseklik = onceki_y2 - onceki_y1
                 mevcut_yukseklik = mevcut_y2 - mevcut_y1
 
-                # Yükseklik dramatik olarak azaldıysa (kişi düştü)
                 if (
                     onceki_yukseklik > 0
                     and mevcut_yukseklik > 0
@@ -440,128 +434,172 @@ class AnomalyAgent:
                         * 0.6,
                     )
 
-                    return AnomaliSonucu(
-                        anomali_tipi=AnomaliTipi.KISI_DUSMESI,
-                        guven_skoru=guven,
-                        izgara_konumu=(
-                            int(bbox_merkez(tespit.bbox)[0]),
-                            int(bbox_merkez(tespit.bbox)[1]),
-                        ),
-                        zaman_damgasi=zaman,
-                        kisi_sayisi=1,
-                        kare_no=kare_sonucu.kare_no,
-                    )
-
-        # Aniden kaybolan kişiler (potansiyel düşme)
-        # Not: DeepSORT track kaybı normaldir, güven skoru düşük tutulur
-        if kaybolan_idler and len(kaybolan_idler) == 1:
-            for kid in kaybolan_idler:
-                if kid in self._onceki_bbox:
-                    guven = self._esikler.dusme_kaybolma_guven
-                    if guven < self._esikler.guven_minimum:
-                        return None
-                    return AnomaliSonucu(
-                        anomali_tipi=AnomaliTipi.KISI_DUSMESI,
-                        guven_skoru=guven,
-                        izgara_konumu=(
-                            int(bbox_merkez(self._onceki_bbox[kid])[0]),
-                            int(bbox_merkez(self._onceki_bbox[kid])[1]),
-                        ),
-                        zaman_damgasi=zaman,
-                        kisi_sayisi=1,
-                        kare_no=kare_sonucu.kare_no,
-                    )
+                    if guven >= self._esikler.guven_minimum:
+                        return AnomaliSonucu(
+                            anomali_tipi=AnomaliTipi.KISI_DUSMESI,
+                            guven_skoru=guven,
+                            izgara_konumu=(
+                                int(bbox_merkez(tespit.bbox)[0]),
+                                int(bbox_merkez(tespit.bbox)[1]),
+                            ),
+                            zaman_damgasi=zaman,
+                            kisi_sayisi=1,
+                            kare_no=kare_sonucu.kare_no,
+                        )
 
         return None
 
-    def _ani_dagilma_kontrol(
+    # ── HIRSIZLIK TESPİTİ ────────────────────────────────────────────────────
+
+    def _hirsizlik_kontrol(
         self,
         kare_sonucu: KareSonucu,
         orunt_sonucu: OruntSonucu,
         zaman: float,
     ) -> Optional[AnomaliSonucu]:
         """
-        Ani dağılma anomalisi kontrolü.
+        Hırsızlık (yankesicilik) tespiti.
 
-        Kriterleri:
-        - Merkezden dışa doğru patlama örüntüsü
-        - Tüm kişilerin merkezden uzaklaşması
-        - Yüksek optik akış büyüklüğü
+        Patern: İki kişi yakın temasta → biri hızla uzaklaşıyor.
+        Kısa süreli yakın temas sonrası ani kaçış hareketi.
         """
-        if len(kare_sonucu.tespitler) < 3:
+        if len(kare_sonucu.tespitler) < 2:
             return None
 
-        # Kalabalığın ağırlık merkezini hesapla
-        merkezler = [bbox_merkez(t.bbox) for t in kare_sonucu.tespitler]
-        agirlik_merkezi = (
-            np.mean([m[0] for m in merkezler]),
-            np.mean([m[1] for m in merkezler]),
-        )
+        mesafe_esigi = self._esikler.hirsizlik_yaklasma_mesafesi
+        temas_suresi = self._esikler.hirsizlik_temas_suresi
+        kacis_hizi = self._esikler.hirsizlik_kacis_hizi
 
-        # Her kişinin merkezden uzaklaşma yönünde hareket edip etmediğini kontrol et
-        uzaklasma_sayisi = 0
-        toplam_uzaklasma_hizi = 0.0
+        tespitler = kare_sonucu.tespitler
 
-        for tespit in kare_sonucu.tespitler:
-            merkez = bbox_merkez(tespit.bbox)
-            vx, vy = tespit.hiz_vektoru
+        # Yakın temas takibi
+        mevcut_ciftler = set()
+        for i in range(len(tespitler)):
+            for j in range(i + 1, len(tespitler)):
+                m1 = bbox_merkez(tespitler[i].bbox)
+                m2 = bbox_merkez(tespitler[j].bbox)
+                mesafe = oklid_mesafesi(m1, m2)
 
-            # Merkezden yön vektörü
-            dx = merkez[0] - agirlik_merkezi[0]
-            dy = merkez[1] - agirlik_merkezi[1]
-            norm = np.sqrt(dx ** 2 + dy ** 2)
+                cift = (min(tespitler[i].id, tespitler[j].id),
+                        max(tespitler[i].id, tespitler[j].id))
 
-            if norm > 0:
-                dx /= norm
-                dy /= norm
+                if mesafe < mesafe_esigi:
+                    mevcut_ciftler.add(cift)
+                    self._yakin_temas[cift] = self._yakin_temas.get(cift, 0) + 1
+                else:
+                    # Temas bitti — biri hızla uzaklaştı mı?
+                    if cift in self._yakin_temas and self._yakin_temas[cift] >= temas_suresi:
+                        v1x, v1y = tespitler[i].hiz_vektoru
+                        v2x, v2y = tespitler[j].hiz_vektoru
+                        h1 = np.sqrt(v1x ** 2 + v1y ** 2)
+                        h2 = np.sqrt(v2x ** 2 + v2y ** 2)
 
-                # Hız vektörünün merkezden uzaklaşma bileşeni
-                uzaklasma = vx * dx + vy * dy
-                if uzaklasma > self._esikler.dagilma_merkezden_uzaklik_esigi:
-                    uzaklasma_sayisi += 1
-                    toplam_uzaklasma_hizi += uzaklasma
+                        kacan_hiz = max(h1, h2)
+                        if kacan_hiz > kacis_hizi:
+                            guven = min(1.0, 0.4 + (kacan_hiz / kacis_hizi) * 0.3
+                                        + (self._yakin_temas[cift] / temas_suresi) * 0.2)
+                            del self._yakin_temas[cift]
 
-        uzaklasma_orani = uzaklasma_sayisi / len(kare_sonucu.tespitler)
+                            kacan_idx = i if h1 > h2 else j
+                            konum = bbox_merkez(tespitler[kacan_idx].bbox)
 
-        if uzaklasma_orani > 0.7:
-            ort_uzaklasma = (
-                toplam_uzaklasma_hizi / uzaklasma_sayisi
-                if uzaklasma_sayisi > 0
-                else 0
-            )
-            guven = min(
-                1.0,
-                uzaklasma_orani * 0.5
-                + min(ort_uzaklasma / 10.0, 0.5),
-            )
+                            return AnomaliSonucu(
+                                anomali_tipi=AnomaliTipi.HIRSIZLIK,
+                                guven_skoru=guven,
+                                izgara_konumu=(int(konum[0]), int(konum[1])),
+                                zaman_damgasi=zaman,
+                                kisi_sayisi=2,
+                                kare_no=kare_sonucu.kare_no,
+                            )
 
-            return AnomaliSonucu(
-                anomali_tipi=AnomaliTipi.ANI_DAGILMA,
-                guven_skoru=guven,
-                izgara_konumu=(
-                    int(agirlik_merkezi[0]),
-                    int(agirlik_merkezi[1]),
-                ),
-                zaman_damgasi=zaman,
-                kisi_sayisi=len(kare_sonucu.tespitler),
-                kare_no=kare_sonucu.kare_no,
-            )
+                    if cift in self._yakin_temas and cift not in mevcut_ciftler:
+                        del self._yakin_temas[cift]
 
         return None
 
+    # ── CİNAYET ŞÜPHESİ TESPİTİ ──────────────────────────────────────────
+
+    def _cinayet_suphesi_kontrol(
+        self,
+        kare_sonucu: KareSonucu,
+        orunt_sonucu: OruntSonucu,
+        zaman: float,
+    ) -> Optional[AnomaliSonucu]:
+        """
+        Cinayet şüphesi: Uzun süreli şiddetli temas + kurban düşmesi.
+
+        Patern: İki kişi uzun süre yoğun fiziksel etkileşim →
+        biri yere düşüyor (bbox küçülme) → diğeri kaçıyor veya bekliyor.
+        """
+        if len(kare_sonucu.tespitler) < 2:
+            return None
+
+        mesafe_esigi = self._esikler.kavga_mesafe_esigi
+        hiz_esigi = self._esikler.cinayet_hiz_esigi
+        siddet_suresi = self._esikler.cinayet_siddet_suresi
+
+        tespitler = kare_sonucu.tespitler
+
+        # Şiddetli temas takibi (kavgaya benzer ama süre önemli)
+        for i in range(len(tespitler)):
+            for j in range(i + 1, len(tespitler)):
+                m1 = bbox_merkez(tespitler[i].bbox)
+                m2 = bbox_merkez(tespitler[j].bbox)
+                mesafe = oklid_mesafesi(m1, m2)
+
+                cift = (min(tespitler[i].id, tespitler[j].id),
+                        max(tespitler[i].id, tespitler[j].id))
+
+                if mesafe < mesafe_esigi:
+                    v1x, v1y = tespitler[i].hiz_vektoru
+                    v2x, v2y = tespitler[j].hiz_vektoru
+                    h1 = np.sqrt(v1x ** 2 + v1y ** 2)
+                    h2 = np.sqrt(v2x ** 2 + v2y ** 2)
+
+                    if max(h1, h2) > hiz_esigi:
+                        self._siddet_sayaci[cift] = self._siddet_sayaci.get(cift, 0) + 1
+                    else:
+                        # Şiddet durdu, ama yeterli süre olduysa kontrol et
+                        pass
+                else:
+                    if cift in self._siddet_sayaci:
+                        del self._siddet_sayaci[cift]
+
+                # Uzun süreli şiddet + düşme kontrolü
+                if cift in self._siddet_sayaci and self._siddet_sayaci[cift] >= siddet_suresi:
+                    # Birinin düşüp düşmediğini kontrol et
+                    for idx in [i, j]:
+                        tid = tespitler[idx].id
+                        if tid in self._onceki_bbox:
+                            _, oy1, _, oy2 = self._onceki_bbox[tid]
+                            _, my1, _, my2 = tespitler[idx].bbox
+                            onceki_h = oy2 - oy1
+                            mevcut_h = my2 - my1
+
+                            if onceki_h > 0 and mevcut_h > 0 and (onceki_h - mevcut_h) > 25:
+                                guven = min(1.0, 0.5 +
+                                            (self._siddet_sayaci[cift] / siddet_suresi) * 0.3 +
+                                            ((onceki_h - mevcut_h) / 50) * 0.2)
+
+                                konum = bbox_merkez(tespitler[idx].bbox)
+                                self._siddet_sayaci[cift] = 0
+
+                                return AnomaliSonucu(
+                                    anomali_tipi=AnomaliTipi.CINAYET_SUPHESI,
+                                    guven_skoru=guven,
+                                    izgara_konumu=(int(konum[0]), int(konum[1])),
+                                    zaman_damgasi=zaman,
+                                    kisi_sayisi=2,
+                                    kare_no=kare_sonucu.kare_no,
+                                )
+
+        return None
+
+    # ── YARDIMCI METODLAR ──────────────────────────────────────────────────
+
     def _yogun_bolge_bul(self, orunt_sonucu: OruntSonucu) -> tuple:
-        """
-        Yoğunluk haritasındaki en yoğun bölgenin konumunu bulur.
-
-        Args:
-            orunt_sonucu: PatternAgent çıktısı.
-
-        Returns:
-            (x, y) en yoğun bölge koordinatları.
-        """
         if orunt_sonucu.yogunluk_izgarasi is None:
             return (0, 0)
-
         idx = np.unravel_index(
             orunt_sonucu.yogunluk_izgarasi.argmax(),
             orunt_sonucu.yogunluk_izgarasi.shape,
@@ -569,21 +607,31 @@ class AnomalyAgent:
         return (int(idx[1]), int(idx[0]))
 
     def _durumu_guncelle(self, kare_sonucu: KareSonucu) -> None:
-        """Önceki kare durumunu günceller."""
         self._onceki_idler = {t.id for t in kare_sonucu.tespitler}
         self._onceki_bbox = {
             t.id: t.bbox for t in kare_sonucu.tespitler
         }
+        self._onceki_hizlar = {
+            t.id: t.hiz_vektoru for t in kare_sonucu.tespitler
+        }
+        # Kaybolmuş ID'lerin bekleme sayacını temizle
+        mevcut = {t.id for t in kare_sonucu.tespitler}
+        for tid in list(self._bekleme_sayaci.keys()):
+            if tid not in mevcut:
+                del self._bekleme_sayaci[tid]
 
     def sifirla(self) -> None:
-        """Tüm durumu sıfırlar."""
         self._kayan_pencere.clear()
         self._onceki_idler.clear()
         self._onceki_bbox.clear()
+        self._onceki_hizlar.clear()
+        self._bekleme_sayaci.clear()
+        self._yakin_temas.clear()
+        self._siddet_sayaci.clear()
+        self._dusme_sonrasi.clear()
         logger.info("AnomalyAgent sıfırlandı.")
 
     def kapat(self) -> None:
-        """Kaynakları serbest bırakır."""
         self.sifirla()
         self._baslatildi = False
         logger.info("AnomalyAgent kapatıldı.")
