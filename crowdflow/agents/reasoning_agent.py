@@ -165,11 +165,10 @@ class ReasoningAgent:
 
         # Tip bazlı temel risk
         tip_risk = {
-            AnomaliTipi.PANIK_KACIS: RiskSeviyesi.YUKSEK,
-            AnomaliTipi.KAVGA_KUMESI: RiskSeviyesi.YUKSEK,
-            AnomaliTipi.DARBOGAZ: RiskSeviyesi.ORTA,
+            AnomaliTipi.KAVGA: RiskSeviyesi.YUKSEK,
+            AnomaliTipi.SALDIRI: RiskSeviyesi.KRITIK,
+            AnomaliTipi.SUPHE_DAVRANIS: RiskSeviyesi.ORTA,
             AnomaliTipi.KISI_DUSMESI: RiskSeviyesi.ORTA,
-            AnomaliTipi.ANI_DAGILMA: RiskSeviyesi.KRITIK,
         }
 
         temel_risk = tip_risk.get(tip, RiskSeviyesi.DUSUK)
@@ -326,36 +325,30 @@ ONERI: [öneri metni]"""
         tip_turkce = ANOMALI_TURKCE.get(tip, str(tip))
 
         analizler = {
-            AnomaliTipi.PANIK_KACIS: (
-                f"Bölgede {anomali.kisi_sayisi} kişilik bir grup ani ve hızlı bir "
-                f"şekilde merkezden uzaklaşıyor. Bu durum panik kaçışına işaret "
-                f"ediyor ve kalabalık ezilmesi riski taşıyor.",
-                "Güvenlik ekibini alarma geçirin. Kaçış yollarını açık tutun. "
-                "Anons sistemiyle sakin kalınması çağrısı yapın.",
+            AnomaliTipi.KAVGA: (
+                f"Bölgede {anomali.kisi_sayisi} kişi arasında fiziksel kavga "
+                f"tespit edildi. Karşılıklı agresif hareketler ve yakın temas "
+                f"gözlemleniyor. Ciddi yaralanma riski mevcut.",
+                "Güvenlik personelini derhal olay yerine yönlendirin. "
+                "Tarafları ayırın. Gerekirse kolluk kuvvetlerini bilgilendirin.",
             ),
-            AnomaliTipi.KAVGA_KUMESI: (
-                f"Lokalize bir bölgede {anomali.kisi_sayisi} kişi arasında yoğun "
-                f"fiziksel etkileşim tespit edildi. Kavga veya arbede riski mevcut.",
-                "Güvenlik personelini olay yerine yönlendirin. Kalabalığı "
-                "bölgeden uzaklaştırın. Gerekirse kolluk kuvvetlerini bilgilendirin.",
+            AnomaliTipi.SALDIRI: (
+                f"Bir kişinin diğerine hızla yaklaşarak saldırı girişiminde "
+                f"bulunduğu tespit edildi. Mağdurun hareket kabiliyeti sınırlı.",
+                "Acil güvenlik müdahalesi gerekli. Saldırganı etkisiz hale getirin. "
+                "Mağdura tıbbi yardım sağlayın. Kolluk kuvvetlerini arayın.",
             ),
-            AnomaliTipi.DARBOGAZ: (
-                f"Yüksek yoğunluklu bir bölgede {anomali.kisi_sayisi} kişi hareket "
-                f"edemez durumda sıkışmış. Darboğaz oluşumu ezilme tehlikesi yaratıyor.",
-                "Alternatif güzergahları açın. Kalabalık akışını yönlendirmek için "
-                "bariyerler yerleştirin. İtfaiye/ambulans hazır beklesin.",
+            AnomaliTipi.SUPHE_DAVRANIS: (
+                f"Bölgede şüpheli davranış tespit edildi. Ani yön değişiklikleri "
+                f"veya belirli bir noktada uzun süreli bekleme gözlemleniyor.",
+                "Güvenlik kameralarıyla kişiyi yakından takip edin. "
+                "Sivil güvenlik personelini bilgilendirin. Gerekirse kimlik kontrolü yapın.",
             ),
             AnomaliTipi.KISI_DUSMESI: (
-                "Takip edilen bir kişinin aniden düştüğü veya görüş alanından "
-                "kaybolduğu tespit edildi. Tıbbi acil durum olabilir.",
-                "En yakın sağlık ekibini yönlendirin. Çevredeki kalabalığı "
+                "Takip edilen bir kişinin aniden yere düştüğü tespit edildi. "
+                "Tıbbi acil durum veya saldırı sonucu olabilir.",
+                "En yakın sağlık ekibini yönlendirin. Çevredeki kişileri "
                 "uzaklaştırarak müdahale alanı oluşturun.",
-            ),
-            AnomaliTipi.ANI_DAGILMA: (
-                f"{anomali.kisi_sayisi} kişilik grup aniden merkezden dışa doğru "
-                f"dağılıyor. Bu patlama veya tehdit algısına bağlı olabilir.",
-                "Bölgeyi derhal güvenlik kordonu altına alın. Tüm çıkışları "
-                "kontrol edin. Bomba imha ekibini bilgilendirin.",
             ),
         }
 

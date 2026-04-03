@@ -20,13 +20,12 @@ from core.config import yapilandirma
 
 
 class AnomaliTipi(Enum):
-    """Tespit edilebilecek anomali türleri."""
+    """Tespit edilebilecek suç odaklı anomali türleri."""
 
-    PANIK_KACIS = "PANIC_FLIGHT"
-    KAVGA_KUMESI = "FIGHT_CLUSTER"
-    DARBOGAZ = "BOTTLENECK"
+    KAVGA = "FIGHT"
+    SALDIRI = "ASSAULT"
+    SUPHE_DAVRANIS = "SUSPICIOUS_BEHAVIOR"
     KISI_DUSMESI = "PERSON_FALL"
-    ANI_DAGILMA = "SUDDEN_DISPERSAL"
 
 
 class RiskSeviyesi(Enum):
@@ -48,11 +47,10 @@ class VideoModu(Enum):
 # ── Anomali Tipi Türkçe Karşılıkları ────────────────────────────────────────
 
 ANOMALI_TURKCE = {
-    AnomaliTipi.PANIK_KACIS: "Panik Kaçış",
-    AnomaliTipi.KAVGA_KUMESI: "Kavga Kümesi",
-    AnomaliTipi.DARBOGAZ: "Darboğaz",
+    AnomaliTipi.KAVGA: "Kavga",
+    AnomaliTipi.SALDIRI: "Saldırı",
+    AnomaliTipi.SUPHE_DAVRANIS: "Şüpheli Davranış",
     AnomaliTipi.KISI_DUSMESI: "Kişi Düşmesi",
-    AnomaliTipi.ANI_DAGILMA: "Ani Dağılma",
 }
 
 RISK_EMOJILERI = {
