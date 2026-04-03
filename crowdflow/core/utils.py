@@ -26,6 +26,8 @@ class AnomaliTipi(Enum):
     SALDIRI = "ASSAULT"
     SUPHE_DAVRANIS = "SUSPICIOUS_BEHAVIOR"
     KISI_DUSMESI = "PERSON_FALL"
+    HIRSIZLIK = "THEFT"
+    CINAYET_SUPHESI = "MURDER_SUSPICION"
 
 
 class RiskSeviyesi(Enum):
@@ -51,6 +53,8 @@ ANOMALI_TURKCE = {
     AnomaliTipi.SALDIRI: "Saldırı",
     AnomaliTipi.SUPHE_DAVRANIS: "Şüpheli Davranış",
     AnomaliTipi.KISI_DUSMESI: "Kişi Düşmesi",
+    AnomaliTipi.HIRSIZLIK: "Hırsızlık",
+    AnomaliTipi.CINAYET_SUPHESI: "Cinayet Şüphesi",
 }
 
 RISK_EMOJILERI = {

@@ -24,7 +24,7 @@ CROWDFLOW_KOK = PROJE_KOK
 class YOLOAyarlari:
     """YOLOv8 insan tespiti yapılandırması."""
 
-    model_yolu: str = "yolov8n.pt"
+    model_yolu: str = "yolo26n.pt"
     guven_esigi: float = 0.5
     sinif_filtresi: list = field(default_factory=lambda: [0])  # 0 = insan sınıfı
     goruntu_boyutu: int = 640
@@ -109,6 +109,14 @@ class AnomaliEsikleri:
     # Kişi düşmesi
     dusme_dikey_esigi: float = 40.0  # bbox yükseklik düşüşü piksel
     dusme_kaybolma_guven: float = 0.25
+    # Hırsızlık tespiti
+    hirsizlik_yaklasma_mesafesi: float = 60.0  # piksel: cep/çanta mesafesi
+    hirsizlik_temas_suresi: int = 5  # kare: minimum temas süresi
+    hirsizlik_kacis_hizi: float = 3.5  # piksel/kare: temastan sonra hızlı uzaklaşma
+    # Cinayet şüphesi
+    cinayet_siddet_suresi: int = 15  # kare: uzun süreli şiddetli temas
+    cinayet_hiz_esigi: float = 3.0  # yoğun hareket eşiği
+    cinayet_dusme_sonrasi_kare: int = 5  # düşme sonrası bekleme
     # Genel
     guven_minimum: float = 0.3
 
@@ -138,12 +146,13 @@ class LLMAyarlari:
 class DashboardAyarlari:
     """Streamlit dashboard yapılandırması."""
 
-    sayfa_basligi: str = "CrowdFlow - Kalabalık Anomali Tespit Sistemi"
+    sayfa_basligi: str = "CrowdFlow - Suç Tespit ve Sosyolojik Analiz Sistemi"
     sayfa_ikonu: str = "🎯"
     yerlesim: str = "wide"
     fps_gosterge: bool = True
     maks_log_satiri: int = 100
     isitma_haritasi_renk_skalasi: str = "YlOrRd"
+    varsayilan_prompt: str = "Tehdit oluşturan durumları tespit et: kavga, şiddet, hırsızlık, saldırı."
 
 
 @dataclass

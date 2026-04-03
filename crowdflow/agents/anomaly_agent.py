@@ -2,12 +2,14 @@
 CrowdFlow AnomalyAgent Modülü (SUÇ ODAKLI)
 
 Kural tabanlı ve otoenkodör destekli suç tespiti yapar.
-Tespit edilen anomaliler 4 suç türüne sınıflandırılır:
+Tespit edilen anomaliler 6 suç türüne sınıflandırılır:
 
 1. KAVGA: Yakın mesafedeki kişiler arasında yoğun karşılıklı hareket
 2. SALDIRI: Bir kişinin diğerine agresif yaklaşması/kovalama
 3. SUPHE_DAVRANIS: Pusuya yatma, ani yön değişimi, takip etme
 4. KISI_DUSMESI: Saldırı sonucu yere düşme/kaybolma
+5. HIRSIZLIK: Yakın temas sonrası hızlı uzaklaşma (yankesicilik paterni)
+6. CINAYET_SUPHESI: Uzun süreli şiddetli temas + düşme kombinasyonu
 """
 
 import os
@@ -55,6 +57,9 @@ class AnomalyAgent:
         self._onceki_bbox: dict = {}  # {id: bbox}
         self._onceki_hizlar: dict = {}  # {id: (vx, vy)} — şüpheli davranış için
         self._bekleme_sayaci: dict = {}  # {id: kare_sayisi} — pusu tespiti
+        self._yakin_temas: dict = {}  # {(id1,id2): kare_sayisi} — hırsızlık/cinayet
+        self._siddet_sayaci: dict = {}  # {(id1,id2): kare_sayisi} — cinayet şüphesi
+        self._dusme_sonrasi: dict = {}  # {id: kare_sayisi} — düşme sonrası izleme
         self._baslatildi: bool = False
 
     def baslat(self) -> None:
@@ -112,6 +117,14 @@ class AnomalyAgent:
         dusme = self._kisi_dusmesi_kontrol(kare_sonucu, zaman)
         if dusme:
             anomaliler.append(dusme)
+
+        hirsizlik = self._hirsizlik_kontrol(kare_sonucu, orunt_sonucu, zaman)
+        if hirsizlik:
+            anomaliler.append(hirsizlik)
+
+        cinayet = self._cinayet_suphesi_kontrol(kare_sonucu, orunt_sonucu, zaman)
+        if cinayet:
+            anomaliler.append(cinayet)
 
         # Otoenkodör skoru ile güven değerlerini güçlendir
         if ae_skoru is not None and ae_skoru > self._esikler.yeniden_yapilandirma_esigi:
@@ -436,6 +449,152 @@ class AnomalyAgent:
 
         return None
 
+    # ── HIRSIZLIK TESPİTİ ────────────────────────────────────────────────────
+
+    def _hirsizlik_kontrol(
+        self,
+        kare_sonucu: KareSonucu,
+        orunt_sonucu: OruntSonucu,
+        zaman: float,
+    ) -> Optional[AnomaliSonucu]:
+        """
+        Hırsızlık (yankesicilik) tespiti.
+
+        Patern: İki kişi yakın temasta → biri hızla uzaklaşıyor.
+        Kısa süreli yakın temas sonrası ani kaçış hareketi.
+        """
+        if len(kare_sonucu.tespitler) < 2:
+            return None
+
+        mesafe_esigi = self._esikler.hirsizlik_yaklasma_mesafesi
+        temas_suresi = self._esikler.hirsizlik_temas_suresi
+        kacis_hizi = self._esikler.hirsizlik_kacis_hizi
+
+        tespitler = kare_sonucu.tespitler
+
+        # Yakın temas takibi
+        mevcut_ciftler = set()
+        for i in range(len(tespitler)):
+            for j in range(i + 1, len(tespitler)):
+                m1 = bbox_merkez(tespitler[i].bbox)
+                m2 = bbox_merkez(tespitler[j].bbox)
+                mesafe = oklid_mesafesi(m1, m2)
+
+                cift = (min(tespitler[i].id, tespitler[j].id),
+                        max(tespitler[i].id, tespitler[j].id))
+
+                if mesafe < mesafe_esigi:
+                    mevcut_ciftler.add(cift)
+                    self._yakin_temas[cift] = self._yakin_temas.get(cift, 0) + 1
+                else:
+                    # Temas bitti — biri hızla uzaklaştı mı?
+                    if cift in self._yakin_temas and self._yakin_temas[cift] >= temas_suresi:
+                        v1x, v1y = tespitler[i].hiz_vektoru
+                        v2x, v2y = tespitler[j].hiz_vektoru
+                        h1 = np.sqrt(v1x ** 2 + v1y ** 2)
+                        h2 = np.sqrt(v2x ** 2 + v2y ** 2)
+
+                        kacan_hiz = max(h1, h2)
+                        if kacan_hiz > kacis_hizi:
+                            guven = min(1.0, 0.4 + (kacan_hiz / kacis_hizi) * 0.3
+                                        + (self._yakin_temas[cift] / temas_suresi) * 0.2)
+                            del self._yakin_temas[cift]
+
+                            kacan_idx = i if h1 > h2 else j
+                            konum = bbox_merkez(tespitler[kacan_idx].bbox)
+
+                            return AnomaliSonucu(
+                                anomali_tipi=AnomaliTipi.HIRSIZLIK,
+                                guven_skoru=guven,
+                                izgara_konumu=(int(konum[0]), int(konum[1])),
+                                zaman_damgasi=zaman,
+                                kisi_sayisi=2,
+                                kare_no=kare_sonucu.kare_no,
+                            )
+
+                    if cift in self._yakin_temas and cift not in mevcut_ciftler:
+                        del self._yakin_temas[cift]
+
+        return None
+
+    # ── CİNAYET ŞÜPHESİ TESPİTİ ──────────────────────────────────────────
+
+    def _cinayet_suphesi_kontrol(
+        self,
+        kare_sonucu: KareSonucu,
+        orunt_sonucu: OruntSonucu,
+        zaman: float,
+    ) -> Optional[AnomaliSonucu]:
+        """
+        Cinayet şüphesi: Uzun süreli şiddetli temas + kurban düşmesi.
+
+        Patern: İki kişi uzun süre yoğun fiziksel etkileşim →
+        biri yere düşüyor (bbox küçülme) → diğeri kaçıyor veya bekliyor.
+        """
+        if len(kare_sonucu.tespitler) < 2:
+            return None
+
+        mesafe_esigi = self._esikler.kavga_mesafe_esigi
+        hiz_esigi = self._esikler.cinayet_hiz_esigi
+        siddet_suresi = self._esikler.cinayet_siddet_suresi
+
+        tespitler = kare_sonucu.tespitler
+
+        # Şiddetli temas takibi (kavgaya benzer ama süre önemli)
+        for i in range(len(tespitler)):
+            for j in range(i + 1, len(tespitler)):
+                m1 = bbox_merkez(tespitler[i].bbox)
+                m2 = bbox_merkez(tespitler[j].bbox)
+                mesafe = oklid_mesafesi(m1, m2)
+
+                cift = (min(tespitler[i].id, tespitler[j].id),
+                        max(tespitler[i].id, tespitler[j].id))
+
+                if mesafe < mesafe_esigi:
+                    v1x, v1y = tespitler[i].hiz_vektoru
+                    v2x, v2y = tespitler[j].hiz_vektoru
+                    h1 = np.sqrt(v1x ** 2 + v1y ** 2)
+                    h2 = np.sqrt(v2x ** 2 + v2y ** 2)
+
+                    if max(h1, h2) > hiz_esigi:
+                        self._siddet_sayaci[cift] = self._siddet_sayaci.get(cift, 0) + 1
+                    else:
+                        # Şiddet durdu, ama yeterli süre olduysa kontrol et
+                        pass
+                else:
+                    if cift in self._siddet_sayaci:
+                        del self._siddet_sayaci[cift]
+
+                # Uzun süreli şiddet + düşme kontrolü
+                if cift in self._siddet_sayaci and self._siddet_sayaci[cift] >= siddet_suresi:
+                    # Birinin düşüp düşmediğini kontrol et
+                    for idx in [i, j]:
+                        tid = tespitler[idx].id
+                        if tid in self._onceki_bbox:
+                            _, oy1, _, oy2 = self._onceki_bbox[tid]
+                            _, my1, _, my2 = tespitler[idx].bbox
+                            onceki_h = oy2 - oy1
+                            mevcut_h = my2 - my1
+
+                            if onceki_h > 0 and mevcut_h > 0 and (onceki_h - mevcut_h) > 25:
+                                guven = min(1.0, 0.5 +
+                                            (self._siddet_sayaci[cift] / siddet_suresi) * 0.3 +
+                                            ((onceki_h - mevcut_h) / 50) * 0.2)
+
+                                konum = bbox_merkez(tespitler[idx].bbox)
+                                self._siddet_sayaci[cift] = 0
+
+                                return AnomaliSonucu(
+                                    anomali_tipi=AnomaliTipi.CINAYET_SUPHESI,
+                                    guven_skoru=guven,
+                                    izgara_konumu=(int(konum[0]), int(konum[1])),
+                                    zaman_damgasi=zaman,
+                                    kisi_sayisi=2,
+                                    kare_no=kare_sonucu.kare_no,
+                                )
+
+        return None
+
     # ── YARDIMCI METODLAR ──────────────────────────────────────────────────
 
     def _yogun_bolge_bul(self, orunt_sonucu: OruntSonucu) -> tuple:
@@ -467,6 +626,9 @@ class AnomalyAgent:
         self._onceki_bbox.clear()
         self._onceki_hizlar.clear()
         self._bekleme_sayaci.clear()
+        self._yakin_temas.clear()
+        self._siddet_sayaci.clear()
+        self._dusme_sonrasi.clear()
         logger.info("AnomalyAgent sıfırlandı.")
 
     def kapat(self) -> None:

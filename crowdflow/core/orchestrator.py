@@ -365,6 +365,11 @@ class Orkestrator:
         """Mevcut sistem durumunu döndürür."""
         return self._durum
 
+    def prompt_ayarla(self, prompt: str) -> None:
+        """Kullanıcı analiz promptunu tüm ilgili ajanlara iletir."""
+        self._reasoning.prompt_ayarla(prompt)
+        logger.info(f"Analiz promptu güncellendi: {prompt[:50]}...")
+
     def video_modu_ayarla(self, mod: VideoModu) -> None:
         """Video modunu değiştirir."""
         self._durum.video_modu = mod

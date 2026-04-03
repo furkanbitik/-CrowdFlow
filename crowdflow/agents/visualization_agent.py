@@ -141,9 +141,9 @@ class VisualizationAgent:
             hiz = np.sqrt(
                 tespit.hiz_vektoru[0] ** 2 + tespit.hiz_vektoru[1] ** 2
             )
-            if hiz > yapilandirma.anomali.panik_hiz_esigi:
+            if hiz > yapilandirma.anomali.kavga_hiz_esigi * 2:
                 renk = RENKLER["kirmizi"]
-            elif hiz > yapilandirma.anomali.panik_hiz_esigi * 0.5:
+            elif hiz > yapilandirma.anomali.kavga_hiz_esigi:
                 renk = RENKLER["sari"]
 
             # Kutu çiz
