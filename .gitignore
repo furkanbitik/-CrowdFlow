@@ -1,22 +1,12 @@
-# Python
+.env
 __pycache__/
 *.pyc
-*.pyo
-
-# Model weights
-*.pt
 *.pth
-*.onnx
-
-# ChromaDB persistent storage
-crowdflow/memory/chroma_db/
-
-# Environment
-.env
-.venv/
-venv/
-
-# IDE
-.idea/
-.vscode/
-*.swp
+*.pkl
+alerts/
+temp_video/
+*.mp4
+*.avi
+*.mov
+*.mkv
+.DS_Store
