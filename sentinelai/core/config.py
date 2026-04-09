@@ -1,0 +1,40 @@
+"""SentinelAI configuration constants."""
+
+# YOLO model settings
+YOLO_POSE_MODEL = "yolo11n-pose.pt"
+YOLO_FALLBACK_MODEL = "yolo11n.pt"
+TRACKER_CONFIG = "bytetrack.yaml"
+CONFIDENCE_THRESHOLD = 0.3
+PERSON_CLASS_ID = 0
+
+# Processing settings
+MAX_PROCESSING_FPS = 10
+LLM_COOLDOWN_SECONDS = 2.0
+STATIONARY_SPEED_THRESHOLD = 3.0  # pixels/frame
+STATIONARY_DURATION_SECONDS = 5.0
+VELOCITY_HISTORY_MAXLEN = 5
+
+# Scene analysis thresholds
+DEFAULT_SENSITIVITY = 0.45
+CLOSE_DISTANCE_PX = 120
+FAST_APPROACH_SPEED = 8.0
+OPPOSITION_THRESHOLD = -0.5
+FALLEN_ASPECT_RATIO = 2.5
+
+# Suspicious score weights
+SCORE_CLOSE_APPROACH = 0.4
+SCORE_OPPOSITION = 0.3
+SCORE_FALLEN = 0.3
+
+# OpenAI settings
+OPENAI_MODEL = "gpt-5-thinking"
+
+# Alert settings
+ALERTS_DIR = "./alerts"
+ALERT_LOG_FILE = "alert_log.txt"
+AUTO_ALERT_SEVERITIES = ("CRITICAL", "HIGH")
+
+# UI settings
+PAGE_TITLE = "SentinelAI"
+PAGE_ICON = "\U0001f3af"
+PAGE_LAYOUT = "wide"
